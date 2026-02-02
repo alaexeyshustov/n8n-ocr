@@ -1,0 +1,333 @@
+{
+  "meta": {
+    "instanceId": "generated_by_gemini_v2"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutes": 5
+            }
+          ]
+        }
+      },
+      "id": "trigger-node",
+      "name": "Every 5 Mins",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "bucketName": "your-input-bucket",
+        "returnAll": true,
+        "options": {}
+      },
+      "id": "s3-list",
+      "name": "S3 List Files",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        200,
+        300
+      ],
+      "credentials": {
+        "awsS3Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-files",
+      "name": "Loop Files",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "tableName": "DocPipeline",
+        "key": "={ \"file_name\": \"{{ $json.Key }}\" }"
+      },
+      "id": "dynamo-check",
+      "name": "Check State",
+      "type": "n8n-nodes-base.awsDynamoDb",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ],
+      "credentials": {
+        "awsDynamoDbApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "id": "rule_is_new",
+              "name": "Is New or Empty",
+              "rule": {
+                "parameters": [
+                  {
+                    "id": "cond_empty",
+                    "name": "State is Empty",
+                    "operator": {
+                      "type": "string",
+                      "operation": "isEmpty"
+                    },
+                    "value": "={{ $json.Item.state }}"
+                  }
+                ]
+              },
+              "output": 0
+            },
+            {
+              "id": "rule_pending_ocr",
+              "name": "Pending OCR",
+              "rule": {
+                "parameters": [
+                  {
+                    "id": "cond_ocr",
+                    "name": "State matches OCR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "value": "PENDING_OCR"
+                    },
+                    "value": "={{ $json.Item.state }}"
+                  }
+                ]
+              },
+              "output": 0
+            },
+            {
+              "id": "rule_pending_translation",
+              "name": "Pending Translation",
+              "rule": {
+                "parameters": [
+                  {
+                    "id": "cond_trans",
+                    "name": "State matches Trans",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "value": "PENDING_TRANSLATION"
+                    },
+                    "value": "={{ $json.Item.state }}"
+                  }
+                ]
+              },
+              "output": 1
+            }
+          ]
+        }
+      },
+      "id": "state-router",
+      "name": "State Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        800,
+        300
+      ],
+      "notes": "Output 0: Needs OCR\nOutput 1: Needs Translation"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "bucketName": "your-input-bucket",
+        "fileKey": "={{ $('Loop Files').json.Key }}",
+        "options": {}
+      },
+      "id": "s3-download",
+      "name": "S3 Download File",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        100
+      ],
+      "credentials": {
+        "awsS3Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "Extract all text from this image/PDF. Return ONLY the raw text."
+                },
+                {
+                  "type": "image",
+                  "source": {
+                    "binaryDataKey": "data"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "bedrock-ocr",
+      "name": "Bedrock OCR",
+      "type": "n8n-nodes-base.awsBedrock",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        100
+      ],
+      "credentials": {
+        "aws": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": "mistral.mistral-large-2402-v1:0",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "You are a professional translator. \n1. Check the language of the input.\n2. If it is NOT German, translate it to German.\n3. If it IS German, output it as-is.\n4. Output ONLY the final text.\n\nInput:\n{{ $json.content || $json.data }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bedrock-translate",
+      "name": "Bedrock Translate",
+      "type": "n8n-nodes-base.awsBedrock",
+      "typeVersion": 1,
+      "position": [
+        1400,
+        300
+      ],
+      "credentials": {
+        "aws": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 Mins": {
+      "main": [
+        [
+          {
+            "node": "S3 List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 List Files": {
+      "main": [
+        [
+          {
+            "node": "Loop Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Files": {
+      "main": [
+        [
+          {
+            "node": "Check State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check State": {
+      "main": [
+        [
+          {
+            "node": "State Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "State Router": {
+      "main": [
+        [
+          {
+            "node": "S3 Download File",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bedrock Translate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Download File": {
+      "main": [
+        [
+          {
+            "node": "Bedrock OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bedrock OCR": {
+      "main": [
+        [
+          {
+            "node": "Bedrock Translate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
