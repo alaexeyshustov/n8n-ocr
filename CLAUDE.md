@@ -1,0 +1,271 @@
+# N8N CDK Project - AI Agent Instructions
+
+## Working Guidelines
+
+**CRITICAL RULES:**
+
+1. **Never create summary files** - Do not create `CHANGES.md`, `SUMMARY.md`, `MIGRATION.md`, or similar documentation files unless explicitly requested by the user. Communicate changes directly to the user.
+
+2. **Always plan before implementing features** - When asked to add a new feature or make significant changes:
+   - Create a plan using the `manage_todo_list` tool
+   - Break down the work into discrete, trackable steps
+   - Mark tasks as in-progress/completed as you work through them
+   - This ensures visibility and prevents incomplete implementations
+
+## Project Context
+
+This is an **AWS CDK TypeScript infrastructure-as-code project** that deploys a complete **n8n automation platform** on AWS. You are helping maintain and modify this infrastructure.
+
+## Project Purpose
+
+Deploys a production-ready n8n instance with:
+
+- **Persistent data** via EBS volume (survives instance replacement)
+- **AWS service integrations** (S3, DynamoDB, Bedrock)
+- **Document processing pipeline** with OCR workflow
+- **Automated IAM credential generation** for n8n workflows
+
+## Architecture Overview
+
+```
+EC2 Instance (t3.small, Amazon Linux 2023)
+  └─ Docker Container: n8n:latest (port 5678)
+      └─ Mounted EBS Volume: /home/ec2-user/.n8n (10GB gp3, encrypted)
+
+AWS Resources:
+  - S3 Bucket: DocProcessingBucket (with lifecycle rules)
+  - DynamoDB Table: DocPipeline (partition key: file_name)
+  - Lambda Function: State Manager (Python 3.12, manages DynamoDB state)
+    └─ Function URL: HTTPS endpoint with IAM auth
+  - Secrets Manager: Mistral API key (n8n/mistral-api-key)
+  - IAM User: n8n-bot-user (with auto-generated access keys)
+  - IAM Role: Instance role with SSM, CloudWatch, S3, DynamoDB, Bedrock permissions
+  - Security Group: Allows 172.16.0.0/12 → port 5678
+```
+
+## File Structure
+
+```
+bin/n8n-cdk.ts           # CDK app entry point, stack instantiation
+lib/n8n-cdk-stack.ts     # Main infrastructure definition (all resources)
+lambda/state-manager.py  # Lambda function for DynamoDB state management
+lambda/README.md         # Lambda API documentation
+workflows/ocr.json       # Sample n8n workflow with Mistral OCR
+test/n8n-cdk.test.ts     # Jest snapshot tests
+```
+
+## Critical Infrastructure Details
+
+### Security Configuration
+
+- **IP Restriction**: Line 29 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L29)
+- **Location**: Instance must be in same AZ as EBS volume (line 19 sets `targetAz`)
+- **Network**: Uses default VPC (or creates new 2-AZ VPC if none exists)
+
+### Data Persistence
+
+- **EBS Volume**: Line 90-95 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L90-L95)
+  - `removalPolicy: RETAIN` - Volume survives `cdk destroy`
+  - Device: `/dev/sdf` (appears as `/dev/nvme1n1` on NVMe instances)
+  - Mount point: `/home/ec2-user/.n8n`
+  - Owner: User 1000 (n8n container user)
+
+### User Data Script (Lines 100-125)
+
+1. Installs Docker, Python3
+2. Waits for EBS device attachment
+3. Formats disk (only if no existing filesystem)
+4. Mounts volume and adds to `/etc/fstab`
+5. Sets permissions for container user (1000:1000)
+6. Starts n8n container with volume mount
+7. Installs Python in container (for n8n code nodes)
+
+### IAM Setup
+
+- **Instance Role**: Lines 95-120 - SSM, CloudWatch, S3, DynamoDB, Bedrock permissions
+- **Lambda Execution Role**: Auto-created by CDK with DynamoDB read/write access
+- **Bot User**: Lines 215-240 - IAM user with S3, DynamoDB, Bedrock, Lambda invoke, and Secrets Manager read permissions
+
+### Secrets Manager
+
+- **Mistral API Key**: Lines 87-92 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L87-L92)
+- **Secret Name**: `n8n/mistral-api-key`
+- **Initial Value**: Placeholder (must be updated after deployment)
+- **Access**: Granted to n8n IAM user for workflow access
+- **Update Command**: `aws secretsmanager update-secret --secret-id n8n/mistral-api-key --secret-string "key"`
+
+### Lambda State Manager
+
+- **Function**: Lines 60-85 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L60-L85)
+- **Code**: [lambda/state-manager.py](lambda/state-manager.py)
+- **Purpose**: Centralized DynamoDB state management for document processing workflow
+- **Invocation**: Function URL with AWS IAM authentication
+- **API**: GET (retrieve state) / UPDATE (modify state) operations
+- **State Flow**: NULL → PENDING_OCR → PENDING_CLASSIFICATION → PENDING_TRANSLATION → COMPLETED
+- **Documentation**: [lambda/README.md](lambda/README.md)
+
+### Workflow Integration
+
+- **OCR Provider**: Mistral AI (Pixtral-12B model via API)
+  - Authentication: HTTP Header Auth with Bearer token
+  - API Endpoint: https://api.mistral.ai/v1/chat/completions
+  - Model: pixtral-12b-2409 (vision model for text extraction)
+- **Classification**: Bedrock (Mistral Large)
+  - Categorizes documents into category/subcategory structure
+  - Returns JSON with filesystem-safe names
+- **Translation**: Bedrock (Mistral Large)
+  - Translates to German if not already in German
+- **Output**: S3 upload to `category/subcategory/filename` path
+
+## Common Modification Patterns
+
+### Change Allowed IP Address
+
+**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L29)
+
+```typescript
+ec2.Peer.ipv4('NEW.IP.ADDRESS/32'),
+```
+
+### Change Instance Type
+
+**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L131)
+
+```typescript
+instanceType: ec2.InstanceType.of(
+  ec2.InstanceClass.T3,
+  ec2.InstanceSize.MEDIUM,
+);
+```
+
+### Increase Volume Size
+
+**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L92)
+
+```typescript
+size: cdk.Size.gibibytes(20), // Change from 10
+```
+
+### Pin Docker Image Version
+
+**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L14)
+
+```typescript
+const PUBLIC_ECR_IMAGE = "n8nio/n8n:1.20.0"; // Instead of :latest
+```
+
+### Make Volume Auto-Delete on Destroy
+
+**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L95)
+
+```typescript
+removalPolicy: cdk.RemovalPolicy.DESTROY, // Instead of RETAIN
+```
+
+## Workflow Information
+
+### Sample Workflow: [workflows/ocr.json](workflows/ocr.json)
+
+- **Trigger**: Every 5 minutes
+- **Flow**: S3 List → DynamoDB State Check → OCR Processing
+- **Purpose**: Document processing pipeline demo
+- **Note**: Contains placeholder `YOUR_CREDENTIAL_ID` - needs manual update after deployment
+
+## Build & Deployment Commands
+
+```bash
+npm install          # Install dependencies
+npm run build       # Compile TypeScript
+npm run watch       # Auto-compile on changes
+npm test            # Run Jest tests
+
+npx cdk bootstrap   # One-time AWS account setup
+npx cdk synth      # Generate CloudFormation
+npx cdk diff       # Show changes
+npx cdk deploy     # Deploy to AWS
+npx cdk destroy    # Teardown (volume retained)
+```
+
+## Troubleshooting Guide
+
+### Deployment Issues
+
+- **Stack stuck**: Check `/var/log/cloud-init-output.log` on EC2 instance
+- **Docker pull fails**: Network/registry issue, check security group outbound rules
+- **Volume attachment timeout**: AZ mismatch between instance and volume
+
+### Runtime Issues
+
+- **n8n not accessible**: Verify security group IP, check Docker: `docker ps -a && docker logs n8n`
+- **Volume not mounted**: Check `lsblk` and `/etc/fstab`, verify device name
+- **Permission errors**: Verify `/home/ec2-user/.n8n` owned by 1000:1000
+
+### Access Methods
+
+- **Web UI**: http://[PublicIP]:5678 (from allowed IP)
+- **SSH**: Use AWS Systems Manager Session Manager (SSM)
+- **Logs**: CloudWatch Logs (if logging configured), `/var/log/cloud-init-output.log`
+
+## Cost Considerations
+
+Monthly estimate (us-east-1):
+
+- EC2 t3.small: ~$15-20
+- EBS 10GB gp3: ~$0.80
+- S3: ~$1.15 (50GB tier)
+- DynamoDB: Pay-per-request (minimal)
+- **Total**: ~$17-25/month
+
+## Security Considerations
+
+When modifying:
+
+1. **Never** use `ec2.Peer.anyIpv4()` for production security groups
+2. **Rotate** IAM access keys periodically (currently static)
+3. **Consider** AWS Secrets Manager instead of CloudFormation outputs for keys
+4. **Enable** CloudTrail and GuardDuty for production deployments
+5. **Review** IAM permissions - currently uses managed policies (broad permissions)
+
+## Known Limitations
+
+1. **Single AZ**: Instance and volume tied to one availability zone
+2. **No HTTPS**: Plain HTTP on port 5678 (add ALB for HTTPS)
+3. **No backups**: No automated EBS snapshots configured
+4. **Static credentials**: Access keys exposed in CloudFormation outputs
+5. **Latest tag**: Docker image uses `:latest` (unpinned)
+
+## Extension Points
+
+To add features, consider:
+
+- **HTTPS**: Add ALB, ACM certificate, Route53 record
+- **High Availability**: Multi-AZ with ALB + EFS (instead of EBS)
+- **Backups**: AWS Backup plan for EBS snapshots
+- **Monitoring**: CloudWatch dashboards and alarms
+- **Secrets**: AWS Secrets Manager integration
+- **Auto-scaling**: Auto Scaling Group (requires EFS for shared storage)
+
+## Dependencies
+
+```json
+{
+  "aws-cdk-lib": "^2.235.1",
+  "constructs": "^10.0.0",
+  "aws-cdk": "2.1103.0",
+  "typescript": "~5.9.3"
+}
+```
+
+## Important References
+
+- **n8n Container**: Runs as user 1000, expects `/home/node/.n8n` inside container
+- **Device Mapping**: `/dev/sdf` → `/dev/nvme1n1` on NVMe instances (T3/T4g)
+- **VPC Lookup**: Uses default VPC if exists, creates new otherwise
+- **CloudFormation Outputs**: Lines 169-213 expose connection details
+
+---
+
+**Project Type**: Infrastructure as Code (AWS CDK)  
+**Language**: TypeScript  
+**Target**: AWS  
+**Last Updated**: February 2, 2026

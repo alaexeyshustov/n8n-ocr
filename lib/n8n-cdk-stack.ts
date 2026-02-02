@@ -3,16 +3,27 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ecr from 'aws-cdk-lib/aws-ecr';
+import * as ecr_assets from 'aws-cdk-lib/aws-ecr-assets';
 import { Construct } from 'constructs';
+import * as path from 'path';
 
 export class N8NCdkStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // CONFIGURATION
-    // Using a popular community mirror from ECR Public to avoid Docker Hub limits
-    // You can search gallery.ecr.aws for other mirrors if preferred
-    const PUBLIC_ECR_IMAGE = 'n8nio/n8n:latest';
+    // ============================================================
+    // CUSTOM N8N DOCKER IMAGE WITH WORKFLOWS
+    // ============================================================
+    
+    // Build custom Docker image with workflows baked in
+    const n8nImage = new ecr_assets.DockerImageAsset(this, 'N8nCustomImage', {
+      directory: path.join(__dirname, '..'),
+      file: 'Dockerfile',
+      platform: ecr_assets.Platform.LINUX_AMD64,
+    });
 
     const vpc = ec2.Vpc.fromLookup(this, 'DefaultVPC', { isDefault: true }) || 
                 new ec2.Vpc(this, 'NewVPC', { maxAzs: 2 });
@@ -27,7 +38,7 @@ export class N8NCdkStack extends cdk.Stack {
       allowAllOutbound: true,
     });
     securityGroup.addIngressRule(
-      ec2.Peer.ipv4('89.186.158.150/32'), 
+      ec2.Peer.ipv4('172.16.0.0/12'), 
       ec2.Port.tcp(5678),
        'Allow N8N Web UI'
     );
@@ -52,6 +63,46 @@ export class N8NCdkStack extends cdk.Stack {
       pointInTimeRecovery: true,
     });
 
+    // ============================================================
+    // LAMBDA FUNCTION FOR DYNAMODB STATE MANAGEMENT
+    // ============================================================
+    
+    const stateManagerFunction = new lambda.Function(this, 'StateManagerFunction', {
+      functionName: 'n8n-doc-pipeline-state-manager',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'state-manager.lambda_handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda')),
+      environment: {
+        TABLE_NAME: table.tableName,
+      },
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      description: 'Manages document processing state in DynamoDB for n8n workflows',
+    });
+
+    // Grant Lambda permissions to access DynamoDB
+    table.grantReadWriteData(stateManagerFunction);
+
+    // Create Function URL for easy invocation from n8n
+    const functionUrl = stateManagerFunction.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.AWS_IAM,
+      cors: {
+        allowedOrigins: ['*'],
+        allowedMethods: [lambda.HttpMethod.POST, lambda.HttpMethod.GET],
+        allowedHeaders: ['*'],
+      },
+    });
+
+    // ============================================================
+    // SECRETS MANAGER - MISTRAL API KEY
+    // ============================================================
+    
+    const mistralApiKeySecret = new secretsmanager.Secret(this, 'MistralApiKey', {
+      secretName: 'n8n/mistral-api-key',
+      description: 'Mistral AI API key for OCR in n8n workflows',
+      secretStringValue: cdk.SecretValue.unsafePlainText('PLACEHOLDER_REPLACE_AFTER_DEPLOYMENT'),
+    });
+
     const role = new iam.Role(this, 'N8nInstanceRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
     });
@@ -59,6 +110,9 @@ export class N8NCdkStack extends cdk.Stack {
     // SSM & CloudWatch Permissions
     role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'));
     role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchLogsFullAccess'));
+    
+    // Grant permission to pull from ECR
+    role.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ContainerRegistryReadOnly'));
     
         // Grant Access to S3 Bucket
     docBucket.grantReadWrite(role);
@@ -125,8 +179,11 @@ export class N8NCdkStack extends cdk.Stack {
       'chown -R 1000:1000 /home/ec2-user/.n8n',
       // -------------------------------
 
-      // --- Start n8n ---
-      `docker run -d --name n8n -p 5678:5678 --restart unless-stopped -e N8N_SECURE_COOKIE=false -v /home/ec2-user/.n8n:/home/node/.n8n ${PUBLIC_ECR_IMAGE}`,
+      // --- Authenticate with ECR and pull custom n8n image ---
+      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${n8nImage.repository.repositoryUri}`,
+      
+      // --- Start n8n with custom image ---
+      `docker run -d --name n8n -p 5678:5678 --restart unless-stopped -e N8N_SECURE_COOKIE=false -v /home/ec2-user/.n8n:/home/node/.n8n ${n8nImage.imageUri}`,
 
       // --- Post-Start: Install Python in Container ---
       'sleep 10',
@@ -175,6 +232,13 @@ export class N8NCdkStack extends cdk.Stack {
        n8nUser.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonS3FullAccess'));
        n8nUser.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonDynamoDBFullAccess'));
        n8nUser.addManagedPolicy(iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess'));
+       
+       // Grant permission to invoke the state manager Lambda
+       stateManagerFunction.grantInvoke(n8nUser);
+       stateManagerFunction.grantInvokeUrl(n8nUser);
+       
+       // Grant permission to read Mistral API key from Secrets Manager
+       mistralApiKeySecret.grantRead(n8nUser);
    
        // Generate Access Key
        const accessKey = new iam.AccessKey(this, 'N8nBotKey', {
@@ -192,6 +256,32 @@ export class N8NCdkStack extends cdk.Stack {
        new cdk.CfnOutput(this, 'N8nSecretAccessKey', {
          value: accessKey.secretAccessKey.unsafeUnwrap(),
          description: 'Copy this to n8n Credential',
+       });
+       
+       // Lambda Function URL
+       new cdk.CfnOutput(this, 'StateManagerFunctionUrl', {
+         value: functionUrl.url,
+         description: 'Lambda Function URL for state management',
+       });
+       
+       new cdk.CfnOutput(this, 'StateManagerFunctionName', {
+         value: stateManagerFunction.functionName,
+         description: 'Lambda Function Name',
+       });
+       
+       new cdk.CfnOutput(this, 'MistralApiKeySecretArn', {
+         value: mistralApiKeySecret.secretArn,
+         description: 'Mistral API Key Secret ARN - Update value in AWS Console after deployment',
+       });
+       
+       new cdk.CfnOutput(this, 'MistralApiKeySecretName', {
+         value: mistralApiKeySecret.secretName,
+         description: 'Mistral API Key Secret Name',
+       });
+       
+       new cdk.CfnOutput(this, 'N8nDockerImageUri', {
+         value: n8nImage.imageUri,
+         description: 'Custom n8n Docker image with workflows',
        });
   }
 }

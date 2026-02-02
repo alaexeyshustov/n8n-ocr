@@ -1,6 +1,6 @@
 {
   "meta": {
-    "instanceId": "generated_by_gemini_v2"
+    "instanceId": "ocr_pipeline"
   },
   "nodes": [
     {
@@ -18,10 +18,7 @@
       "name": "Every 5 Mins",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [
-        0,
-        300
-      ]
+      "position": [0, 300]
     },
     {
       "parameters": {
@@ -33,10 +30,7 @@
       "name": "S3 List Files",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [
-        200,
-        300
-      ],
+      "position": [200, 300],
       "credentials": {
         "awsS3Api": {
           "id": "YOUR_CREDENTIAL_ID",
@@ -53,26 +47,25 @@
       "name": "Loop Files",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [
-        400,
-        300
-      ]
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "tableName": "DocPipeline",
-        "key": "={ \"file_name\": \"{{ $json.Key }}\" }"
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"GET\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\"\n}",
+        "options": {}
       },
-      "id": "dynamo-check",
-      "name": "Check State",
-      "type": "n8n-nodes-base.awsDynamoDb",
-      "typeVersion": 1,
-      "position": [
-        600,
-        300
-      ],
+      "id": "lambda-get-state",
+      "name": "Get State from Lambda",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 300],
       "credentials": {
-        "awsDynamoDbApi": {
+        "awsApi": {
           "id": "YOUR_CREDENTIAL_ID",
           "name": "AWS Connection"
         }
@@ -95,7 +88,7 @@
                       "type": "string",
                       "operation": "isEmpty"
                     },
-                    "value": "={{ $json.Item.state }}"
+                    "value": "={{ $json.body.state }}"
                   }
                 ]
               },
@@ -114,7 +107,7 @@
                       "operation": "equals",
                       "value": "PENDING_OCR"
                     },
-                    "value": "={{ $json.Item.state }}"
+                    "value": "={{ $json.body.state }}"
                   }
                 ]
               },
@@ -133,7 +126,7 @@
                       "operation": "equals",
                       "value": "PENDING_TRANSLATION"
                     },
-                    "value": "={{ $json.Item.state }}"
+                    "value": "={{ $json.body.state }}"
                   }
                 ]
               },
@@ -146,10 +139,7 @@
       "name": "State Router",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [
-        800,
-        300
-      ],
+      "position": [800, 300],
       "notes": "Output 0: Needs OCR\nOutput 1: Needs Translation"
     },
     {
@@ -163,10 +153,7 @@
       "name": "S3 Download File",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [
-        1000,
-        100
-      ],
+      "position": [1000, 100],
       "credentials": {
         "awsS3Api": {
           "id": "YOUR_CREDENTIAL_ID",
@@ -176,42 +163,23 @@
     },
     {
       "parameters": {
-        "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
-        "messages": {
-          "values": [
-            {
-              "role": "user",
-              "content": [
-                {
-                  "type": "text",
-                  "text": "Extract all text from this image/PDF. Return ONLY the raw text."
-                },
-                {
-                  "type": "image",
-                  "source": {
-                    "binaryDataKey": "data"
-                  }
-                }
-              ]
-            }
-          ]
-        },
-        "options": {
-          "temperature": 0
-        }
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"pixtral-12b-2409\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Extract all text from this image. Return ONLY the raw text, no formatting or explanations.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $binary.data.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"temperature\": 0\n}",
+        "options": {}
       },
-      "id": "bedrock-ocr",
-      "name": "Bedrock OCR",
-      "type": "n8n-nodes-base.awsBedrock",
-      "typeVersion": 1,
-      "position": [
-        1200,
-        100
-      ],
+      "id": "mistral-ocr",
+      "name": "Mistral OCR",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 100],
       "credentials": {
-        "aws": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+        "httpHeaderAuth": {
+          "id": "YOUR_MISTRAL_CREDENTIAL_ID",
+          "name": "Mistral API"
         }
       }
     },
@@ -232,12 +200,198 @@
       "name": "Bedrock Translate",
       "type": "n8n-nodes-base.awsBedrock",
       "typeVersion": 1,
-      "position": [
-        1400,
-        300
-      ],
+      "position": [1400, 300],
       "credentials": {
         "aws": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "extract-text",
+              "name": "content",
+              "value": "={{ $json.choices[0].message.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-ocr-text",
+      "name": "Extract OCR Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_CLASSIFICATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": {{ $json.content.length }}\n  }\n}",
+        "options": {}
+      },
+      "id": "lambda-update-after-ocr",
+      "name": "Update State: OCR Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 100],
+      "credentials": {
+        "awsApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": "mistral.mistral-large-2402-v1:0",
+        "messages": {
+          "values": [
+            {
+              "role": "user",
+              "content": "=You are a document classifier. Analyze the following text and classify it into a category and subcategory.\n\nReturn ONLY a JSON object with this exact structure:\n{\n  \"category\": \"<main category>\",\n  \"subcategory\": \"<specific subcategory>\"\n}\n\nUse clear, filesystem-safe names (lowercase, hyphens instead of spaces).\n\nText to classify:\n{{ $json.content }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "bedrock-classify",
+      "name": "Bedrock Classify",
+      "type": "n8n-nodes-base.awsBedrock",
+      "typeVersion": 1,
+      "position": [1800, 100],
+      "credentials": {
+        "aws": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "category",
+              "name": "category",
+              "value": "={{ JSON.parse($json.content).category }}",
+              "type": "string"
+            },
+            {
+              "id": "subcategory",
+              "name": "subcategory",
+              "value": "={{ JSON.parse($json.content).subcategory }}",
+              "type": "string"
+            },
+            {
+              "id": "original-text",
+              "name": "text",
+              "value": "={{ $('Extract OCR Text').item.json.content }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-classification",
+      "name": "Extract Classification",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"classification_completed_at\": \"{{ $now.toISO() }}\",\n    \"category\": \"{{ $json.category }}\",\n    \"subcategory\": \"{{ $json.subcategory }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "lambda-update-after-classification",
+      "name": "Update State: Classification Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 100],
+      "credentials": {
+        "awsApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
+        "fileName": "={{ $('Extract Classification').item.json.category }}/{{ $('Extract Classification').item.json.subcategory }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}",
+        "fileContent": "={{ $json.content }}",
+        "options": {
+          "contentType": "text/plain"
+        }
+      },
+      "id": "s3-upload-result",
+      "name": "S3 Upload Result",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [2600, 300],
+      "credentials": {
+        "awsS3Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"COMPLETED\",\n  \"metadata\": {\n    \"translation_completed_at\": \"{{ $now.toISO() }}\",\n    \"final_text_length\": {{ $json.content.length }},\n    \"output_path\": \"{{ $('Extract Classification').item.json.category }}/{{ $('Extract Classification').item.json.subcategory }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "lambda-update-complete",
+      "name": "Update State: Completed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2800, 300],
+      "credentials": {
+        "awsApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "AWS Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_OCR\",\n  \"metadata\": {\n    \"discovered_at\": \"{{ $now.toISO() }}\",\n    \"file_size\": {{ $('Loop Files').item.json.Size || 0 }}\n  }\n}",
+        "options": {}
+      },
+      "id": "lambda-mark-new",
+      "name": "Mark as New File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 0],
+      "credentials": {
+        "awsApi": {
           "id": "YOUR_CREDENTIAL_ID",
           "name": "AWS Connection"
         }
@@ -271,14 +425,14 @@
       "main": [
         [
           {
-            "node": "Check State",
+            "node": "Get State from Lambda",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Check State": {
+    "Get State from Lambda": {
       "main": [
         [
           {
@@ -293,7 +447,7 @@
       "main": [
         [
           {
-            "node": "S3 Download File",
+            "node": "Mark as New File",
             "type": "main",
             "index": 0
           }
@@ -307,22 +461,110 @@
         ]
       ]
     },
-    "S3 Download File": {
+    "Mark as New File": {
       "main": [
         [
           {
-            "node": "Bedrock OCR",
+            "node": "S3 Download File",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Bedrock OCR": {
+    "S3 Download File": {
+      "main": [
+        [
+          {
+            "node": "Mistral OCR",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR": {
+      "main": [
+        [
+          {
+            "node": "Extract OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Update State: OCR Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update State: OCR Done": {
+      "main": [
+        [
+          {
+            "node": "Bedrock Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bedrock Classify": {
+      "main": [
+        [
+          {
+            "node": "Extract Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Classification": {
+      "main": [
+        [
+          {
+            "node": "Update State: Classification Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update State: Classification Done": {
       "main": [
         [
           {
             "node": "Bedrock Translate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bedrock Translate": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 Upload Result": {
+      "main": [
+        [
+          {
+            "node": "Update State: Completed",
             "type": "main",
             "index": 0
           }
