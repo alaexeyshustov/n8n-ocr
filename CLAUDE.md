@@ -28,18 +28,26 @@ Deploys a production-ready n8n instance with:
 ## Architecture Overview
 
 ```
-EC2 Instance (t3.small, Amazon Linux 2023)
-  └─ Docker Container: n8n:latest (port 5678)
-      └─ Mounted EBS Volume: /home/ec2-user/.n8n (10GB gp3, encrypted)
+ECS Cluster (n8n-cluster)
+  └─ EC2 Spot Instance (t3.small, ECS-Optimized AMI)
+      └─ ECS Task: n8n (custom Docker image from ECR)
+          ├─ Port 5678 (Web UI)
+          └─ Mounted EFS: /home/node/.n8n (encrypted, persistent)
+
+Scheduled Scaling:
+  - Scale down to 0 at 10 PM UTC (night)
+  - Scale up to 1 at 8 AM UTC (morning)
 
 AWS Resources:
+  - ECR Repository: Custom n8n image with workflows baked in
+  - EFS File System: Persistent storage for n8n data
   - S3 Bucket: DocProcessingBucket (with lifecycle rules)
   - DynamoDB Table: DocPipeline (partition key: file_name)
   - Lambda Function: State Manager (Python 3.12, manages DynamoDB state)
     └─ Function URL: HTTPS endpoint with IAM auth
   - Secrets Manager: Mistral API key (n8n/mistral-api-key)
   - IAM User: n8n-bot-user (with auto-generated access keys)
-  - IAM Role: Instance role with SSM, CloudWatch, S3, DynamoDB, Bedrock permissions
+  - IAM Role: Task role with S3, DynamoDB, Bedrock permissions
   - Security Group: Allows 172.16.0.0/12 → port 5678
 ```
 
@@ -50,7 +58,10 @@ bin/n8n-cdk.ts           # CDK app entry point, stack instantiation
 lib/n8n-cdk-stack.ts     # Main infrastructure definition (all resources)
 lambda/state-manager.py  # Lambda function for DynamoDB state management
 lambda/README.md         # Lambda API documentation
-workflows/ocr.json       # Sample n8n workflow with Mistral OCR
+workflows/ocr.json       # Sample n8n workflow with Mistral OCR (baked into Docker image)
+Dockerfile               # Custom n8n image with workflows and Python
+.dockerignore            # Docker build exclusions
+get-n8n-url.sh          # Helper script to find ECS task IP
 test/n8n-cdk.test.ts     # Jest snapshot tests
 ```
 
@@ -58,26 +69,35 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 
 ### Security Configuration
 
-- **IP Restriction**: Line 29 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L29)
-- **Location**: Instance must be in same AZ as EBS volume (line 19 sets `targetAz`)
+- **IP Restriction**: Security group ingress rule in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts)
 - **Network**: Uses default VPC (or creates new 2-AZ VPC if none exists)
 
 ### Data Persistence
 
-- **EBS Volume**: Line 90-95 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L90-L95)
-  - `removalPolicy: RETAIN` - Volume survives `cdk destroy`
-  - Device: `/dev/sdf` (appears as `/dev/nvme1n1` on NVMe instances)
-  - Mount point: `/home/ec2-user/.n8n`
-  - Owner: User 1000 (n8n container user)
+- **EFS File System**: Persistent storage for n8n data
+  - `removalPolicy: RETAIN` - File system survives `cdk destroy`
+  - Access Point: `/n8n-data` with UID/GID 1000
+  - Mount point in container: `/home/node/.n8n`
+  - Encrypted at rest and in transit
 
-### User Data Script (Lines 100-125)
+### ECS Configuration
 
-1. Installs Docker, Python3
-2. Waits for EBS device attachment
-3. Formats disk (only if no existing filesystem)
-4. Mounts volume and adds to `/etc/fstab`
-5. Sets permissions for container user (1000:1000)
-6. Starts n8n container with volume mount
+- **Cluster**: n8n-cluster with EC2 Spot capacity provider
+- **Instance Type**: t3.small with spot pricing (~70% cost savings)
+- **Task Definition**: EC2 launch type with EFS volume
+- **Service**: Single task (desired count: 1, scales to 0 at night)
+- **Scaling Schedule**:
+  - Scale down at 22:00 UTC (10 PM)
+  - Scale up at 08:00 UTC (8 AM)
+
+### Docker Image
+
+- **Base**: n8nio/n8n:latest
+- **Customizations**:
+  - Python 3 and pip installed
+  - Workflows copied to `/home/node/.n8n/`
+  - Built and pushed to ECR during deployment
+
 7. Installs Python in container (for n8n code nodes)
 
 ### IAM Setup

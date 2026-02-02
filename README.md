@@ -4,39 +4,50 @@ Deploy a complete **n8n workflow automation platform** on AWS with persistent st
 
 ## What This Deploys
 
-- **n8n** workflow automation tool running on EC2 with Docker
-- **Persistent EBS volume** to retain n8n data across instance replacements
+- **n8n** workflow automation tool running on **ECS with EC2 Spot instances** for cost optimization
+- **Scheduled scaling** to turn off at night (10 PM UTC) and on in the morning (8 AM UTC)
+- **Persistent EFS volume** to retain n8n data across task restarts
 - **S3 bucket** for document processing/storage
 - **DynamoDB table** for tracking document pipeline states
 - **Lambda function** for reliable state management (Python 3.12)
 - **AWS Bedrock** access for AI/ML capabilities
 - **IAM credentials** automatically generated for n8n to access AWS services
+- **Custom Docker image** with workflows baked in, stored in ECR
 - Sample **OCR workflow** for document processing
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  EC2 Instance (t3.small)                           │
+│  ECS Cluster (n8n-cluster)                         │
 │  ┌──────────────────────────────────────┐          │
-│  │  Docker Container: n8n:latest        │          │
-│  │  Port 5678 (Web UI)                  │          │
+│  │  EC2 Spot Instance (t3.small)        │          │
+│  │  ┌────────────────────────────────┐  │          │
+│  │  │ ECS Task: n8n (custom image)   │  │          │
+│  │  │ Port 5678 (Web UI)             │  │          │
+│  │  └────────────────────────────────┘  │          │
 │  └──────────────────────────────────────┘          │
 │           ↓ mounted volume                          │
 │  ┌──────────────────────────────────────┐          │
-│  │  EBS Volume (10GB, gp3, encrypted)   │          │
-│  │  /home/ec2-user/.n8n                 │          │
+│  │  EFS File System (encrypted)         │          │
+│  │  /home/node/.n8n                     │          │
 │  └──────────────────────────────────────┘          │
+│                                                     │
+│  Scheduled Scaling:                                 │
+│  • Scale down to 0 at 10 PM UTC (night)            │
+│  • Scale up to 1 at 8 AM UTC (morning)             │
 └─────────────────────────────────────────────────────┘
-              ↓ IAM Role with permissions
+              ↓ Task IAM Role with permissions
 ┌─────────────────────────────────────────────────────┐
 │  AWS Resources:                                     │
+│  - ECR Repository (custom n8n image)                │
 │  - S3 Bucket (DocProcessingBucket)                  │
 │  - DynamoDB Table (DocPipeline)                     │
 │  - Lambda Function (State Manager)                  │
 │    └─ Function URL: HTTPS endpoint                  │
 │  - IAM User (n8n-bot-user) with access keys         │
 │  - Bedrock API access                               │
+│  - Secrets Manager (Mistral API key)                │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -79,26 +90,49 @@ ec2.Peer.ipv4('YOUR.IP.ADDRESS.HERE/32'),
 
 ### 4. Build & Deploy
 
+⚠️ **Note**: First deployment takes 5-10 minutes as it builds and pushes the custom Docker image to ECR.
+
 ```bash
 npm run build
 npx cdk deploy
 ```
 
-### 5. Save the Outputs
+### 5. Get the n8n URL
 
-After deployment, save these values:
+After deployment, get the n8n URL by running:
 
-- **N8nUrl** - Web UI access URL (http://[IP]:5678)
+```bash
+./get-n8n-url.sh
+```
+
+Or manually via AWS Console:
+
+1. Go to **ECS** → **Clusters** → **n8n-cluster**
+2. Click on the service → **Tasks** tab
+3. Click on the running task
+4. Find the **Public IP** under Network section
+5. Access n8n at `http://[PUBLIC_IP]:5678`
+
+**Note:** The service scales down to 0 tasks at 10 PM UTC and scales back up to 1 task at 8 AM UTC. You can manually adjust the desired count in the ECS console if needed.
+
+### 6. Save the Deployment Outputs
+
+After deployment, save these values from the CDK outputs:
+
+- **N8nClusterName** - ECS cluster name
+- **N8nServiceName** - ECS service name
 - **BucketName** - S3 bucket name
 - **TableName** - DynamoDB table name
+- **FileSystemId** - EFS file system ID for persistent storage
 - **StateManagerFunctionUrl** - Lambda Function URL for state management
 - **StateManagerFunctionName** - Lambda Function name
 - **MistralApiKeySecretArn** - Secret ARN for Mistral API key
 - **MistralApiKeySecretName** - Secret name (n8n/mistral-api-key)
 - **N8nAccessKeyId** - AWS Access Key for n8n
 - **N8nSecretAccessKey** - AWS Secret Key (⚠️ sensitive!)
+- **N8nDockerImageUri** - Custom Docker image URI in ECR
 
-### 6. Update Mistral API Key in Secrets Manager
+### 7. Update Mistral API Key in Secrets Manager
 
 The stack creates a placeholder secret. Update it with your actual Mistral API key:
 
@@ -115,6 +149,24 @@ Or via AWS Console:
 3. Click **Retrieve secret value** → **Edit**
 4. Replace placeholder with your Mistral API key
 5. Save
+
+### 8. Access Secrets in n8n
+
+All secrets are automatically injected into the n8n container as environment variables:
+
+- **MISTRAL_API_KEY** - Your Mistral AI API key
+- **AWS_ACCESS_KEY_ID** - AWS credentials for accessing services
+- **AWS_SECRET_ACCESS_KEY** - AWS secret key
+- **LAMBDA_STATE_MANAGER_URL** - Lambda Function URL for state management
+- **S3_BUCKET_NAME** - S3 bucket name
+
+You can access these in your n8n workflows using the `{{ $env.VARIABLE_NAME }}` syntax. For example:
+
+- `{{ $env.MISTRAL_API_KEY }}`
+- `{{ $env.LAMBDA_STATE_MANAGER_URL }}`
+- `{{ $env.S3_BUCKET_NAME }}`
+
+**Note:** The workflow credentials (YOUR_CREDENTIAL_ID placeholders) in [workflows/ocr.json](workflows/ocr.json) should be replaced with references to environment variables for automatic configuration.
 
 Get your Mistral API key from: https://console.mistral.ai/
 
