@@ -66,13 +66,28 @@ Deploy a complete **n8n workflow automation platform** on AWS with persistent st
 npm install
 ```
 
-### 2. Bootstrap CDK (First Time Only)
+### 2. Configure Environment Variables
+
+Create a `.env` file in the project root with your AWS account details:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` with your actual values:
+
+```bash
+AWS_ACCOUNT_ID="your-account-id"
+AWS_REGION="your-region"
+```
+
+### 3. Bootstrap CDK (First Time Only)
 
 ```bash
 npx cdk bootstrap
 ```
 
-### 3. Configure Security Group IP
+### 4. Configure Security Group IP
 
 ⚠️ **Important**: Update the allowed IP address in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L29)
 
@@ -88,7 +103,7 @@ Then update line 29 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts):
 ec2.Peer.ipv4('YOUR.IP.ADDRESS.HERE/32'),
 ```
 
-### 4. Build & Deploy
+### 5. Build & Deploy
 
 ⚠️ **Note**: First deployment takes 5-10 minutes as it builds and pushes the custom Docker image to ECR.
 
@@ -97,12 +112,27 @@ npm run build
 npx cdk deploy
 ```
 
-### 5. Get the n8n URL
+### 6. Add Your IP to Security Group
+
+The security group has no default ingress rules for security. Add your current public IP:
+
+```bash
+./add-my-ip.sh
+```
+
+This script will:
+- Auto-detect your current public IP address
+- Add an ingress rule to allow access to n8n on port 5678
+- Check if your IP is already authorized before adding
+
+**Note:** If your IP changes, run this script again to add the new IP.
+
+### 7. Get the n8n URL
 
 After deployment, get the n8n URL by running:
 
 ```bash
-./get-n8n-url.sh
+./bin/get-n8n-url.sh
 ```
 
 Or manually via AWS Console:
@@ -115,7 +145,7 @@ Or manually via AWS Console:
 
 **Note:** The service scales down to 0 tasks at 10 PM UTC and scales back up to 1 task at 8 AM UTC. You can manually adjust the desired count in the ECS console if needed.
 
-### 6. Save the Deployment Outputs
+### 8. Save the Deployment Outputs
 
 After deployment, save these values from the CDK outputs:
 

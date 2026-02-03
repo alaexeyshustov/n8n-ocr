@@ -1,23 +1,35 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 import * as cdk from 'aws-cdk-lib/core';
-import { N8NCdkStack } from '../lib/n8n-cdk-stack';
+import { BaseInfrastructureStack } from '../lib/base-infrastructure-stack';
+import { StateMachineStack } from '../lib/state-machine-stack';
+import { EcsStack } from '../lib/ecs-stack';
 
 const app = new cdk.App();
-new N8NCdkStack(app, 'N8NCdkStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
-  env: { 
-    account: process.env.CDK_DEFAULT_ACCOUNT, 
-    region: process.env.CDK_DEFAULT_REGION 
-  },
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+const env = {
+  account: process.env.AWS_ACCOUNT_ID || process.env.CDK_DEFAULT_ACCOUNT,
+  region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION
+};
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
+// Deploy stacks in order of dependencies
+const baseStack = new BaseInfrastructureStack(app, 'N8nBaseInfrastructure', { env });
+
+const stateMachineStack = new StateMachineStack(app, 'N8nStateMachine', {
+  env,
+  n8nUser: baseStack.n8nUser,
+});
+
+const ecsStack = new EcsStack(app, 'N8nEcsService', {
+  env,
+  vpc: baseStack.vpc,
+  fileSystem: baseStack.fileSystem,
+  securityGroup: baseStack.securityGroup,
+  accessPoint: baseStack.accessPoint,
+  docBucket: baseStack.docBucket,
+  table: stateMachineStack.table,
+  mistralApiKeySecret: baseStack.mistralApiKeySecret,
+  awsAccessKeyIdSecret: baseStack.awsAccessKeyIdSecret,
+  awsSecretAccessKeySecret: baseStack.awsSecretAccessKeySecret,
+  lambdaFunctionUrlSecret: stateMachineStack.lambdaFunctionUrlSecret,
 });

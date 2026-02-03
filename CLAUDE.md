@@ -48,20 +48,21 @@ AWS Resources:
   - Secrets Manager: Mistral API key (n8n/mistral-api-key)
   - IAM User: n8n-bot-user (with auto-generated access keys)
   - IAM Role: Task role with S3, DynamoDB, Bedrock permissions
-  - Security Group: Allows 172.16.0.0/12 → port 5678
+  - Security Group: No default ingress rules (use add-my-ip.sh to add your IP)
 ```
 
 ## File Structure
 
 ```
 bin/n8n-cdk.ts           # CDK app entry point, stack instantiation
+bin/add-my-ip.sh         # Helper script to add your current IP to security group
+bin/get-n8n-url.sh       # Helper script to find ECS task IP
 lib/n8n-cdk-stack.ts     # Main infrastructure definition (all resources)
 lambda/state-manager.py  # Lambda function for DynamoDB state management
 lambda/README.md         # Lambda API documentation
 workflows/ocr.json       # Sample n8n workflow with Mistral OCR (baked into Docker image)
 Dockerfile               # Custom n8n image with workflows and Python
 .dockerignore            # Docker build exclusions
-get-n8n-url.sh          # Helper script to find ECS task IP
 test/n8n-cdk.test.ts     # Jest snapshot tests
 ```
 
@@ -69,7 +70,7 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 
 ### Security Configuration
 
-- **IP Restriction**: Security group ingress rule in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts)
+- **IP Restriction**: No default ingress rules - use `add-my-ip.sh` script to add your current public IP to security group
 - **Network**: Uses default VPC (or creates new 2-AZ VPC if none exists)
 
 ### Data Persistence
@@ -139,13 +140,19 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 
 ## Common Modification Patterns
 
-### Change Allowed IP Address
+### Add Your IP to Security Group
 
-**File**: [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L29)
+Use the `add-my-ip.sh` script to automatically add your current public IP to the security group:
 
-```typescript
-ec2.Peer.ipv4('NEW.IP.ADDRESS/32'),
+```bash
+./bin/add-my-ip.sh
 ```
+
+This script will:
+- Auto-detect your current public IP
+- Find the security group from the CloudFormation stack
+- Add an ingress rule for port 5678
+- Skip if your IP is already authorized
 
 ### Change Instance Type
 
@@ -191,6 +198,20 @@ removalPolicy: cdk.RemovalPolicy.DESTROY, // Instead of RETAIN
 - **Purpose**: Document processing pipeline demo
 - **Note**: Contains placeholder `YOUR_CREDENTIAL_ID` - needs manual update after deployment
 
+## Environment Configuration
+
+### Required Environment Variables
+
+The project uses dotenv to load AWS account configuration from a `.env` file:
+
+**File**: `.env` (in project root, gitignored)
+
+**Loading**: [bin/n8n-cdk.ts](bin/n8n-cdk.ts) imports `dotenv/config` at the top
+
+**Fallback**: If `.env` is not present, falls back to `CDK_DEFAULT_ACCOUNT` and `CDK_DEFAULT_REGION` environment variables
+
+**Priority**: `AWS_ACCOUNT_ID` > `CDK_DEFAULT_ACCOUNT`, `AWS_REGION` > `CDK_DEFAULT_REGION`
+
 ## Build & Deployment Commands
 
 ```bash
@@ -205,6 +226,8 @@ npx cdk diff       # Show changes
 npx cdk deploy     # Deploy to AWS
 npx cdk destroy    # Teardown (volume retained)
 ```
+
+**Note**: Ensure `.env` file is configured before running CDK commands that require account/region (bootstrap, synth, deploy).
 
 ## Troubleshooting Guide
 
