@@ -128,6 +128,11 @@ export class EcsStack extends cdk.Stack {
       environment: {
         N8N_SECURE_COOKIE: "false",
         S3_BUCKET_NAME: props.docBucket.bucketName,
+        BATCH_SIZE: "1",
+        TARGET_LANGUAGE: "English",
+        BEDROCK_MODEL: "mistral.mistral-large-2402-v1:0",
+        MISTRAL_MODEL: "pixtral-12b-2409",
+        MISTRAL_MAX_TOKENS: "4096"
       },
       secrets: {
         MISTRAL_API_KEY: ecs.Secret.fromSecretsManager(

@@ -22,8 +22,9 @@
     },
     {
       "parameters": {
-        "bucketName": "your-input-bucket",
-        "returnAll": true,
+        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
+        "returnAll": false,
+        "limit": 100,
         "options": {}
       },
       "id": "s3-list",
@@ -33,14 +34,13 @@
       "position": [200, 300],
       "credentials": {
         "awsS3Api": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS S3"
         }
       }
     },
     {
       "parameters": {
-        "batchSize": 1,
+        "batchSize": "={{ parseInt($env.BATCH_SIZE) || 5 }}",
         "options": {}
       },
       "id": "loop-files",
@@ -57,7 +57,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"operation\": \"GET\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\"\n}",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "lambda-get-state",
       "name": "Get State from Lambda",
@@ -66,8 +68,7 @@
       "position": [600, 300],
       "credentials": {
         "awsApi": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS API"
         }
       }
     },
@@ -114,13 +115,32 @@
               "output": 0
             },
             {
+              "id": "rule_pending_classification",
+              "name": "Pending Classification",
+              "rule": {
+                "parameters": [
+                  {
+                    "id": "cond_classification",
+                    "name": "State matches Classification",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "value": "PENDING_CLASSIFICATION"
+                    },
+                    "value": "={{ $json.body.state }}"
+                  }
+                ]
+              },
+              "output": 0
+            },
+            {
               "id": "rule_pending_translation",
               "name": "Pending Translation",
               "rule": {
                 "parameters": [
                   {
                     "id": "cond_trans",
-                    "name": "State matches Trans",
+                    "name": "State matches Translation",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
@@ -131,8 +151,30 @@
                 ]
               },
               "output": 1
+            },
+            {
+              "id": "rule_completed",
+              "name": "Completed (Skip)",
+              "rule": {
+                "parameters": [
+                  {
+                    "id": "cond_completed",
+                    "name": "State is Completed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "value": "COMPLETED"
+                    },
+                    "value": "={{ $json.body.state }}"
+                  }
+                ]
+              },
+              "output": 2
             }
           ]
+        },
+        "options": {
+          "fallbackOutput": 3
         }
       },
       "id": "state-router",
@@ -140,13 +182,13 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
       "position": [800, 300],
-      "notes": "Output 0: Needs OCR\nOutput 1: Needs Translation"
+      "notes": "Output 0: Needs OCR/Classification\nOutput 1: Needs Translation\nOutput 2: Completed (Skip)\nOutput 3: Error/Unknown State"
     },
     {
       "parameters": {
         "operation": "download",
-        "bucketName": "your-input-bucket",
-        "fileKey": "={{ $('Loop Files').json.Key }}",
+        "bucketName": "={{ $env.S3_INPUT_BUCKET }}",
+        "fileKey": "={{ $('Loop Files').item.json.Key }}",
         "options": {}
       },
       "id": "s3-download",
@@ -156,8 +198,7 @@
       "position": [1000, 100],
       "credentials": {
         "awsS3Api": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS S3"
         }
       }
     },
@@ -168,8 +209,15 @@
         "url": "https://api.mistral.ai/v1/chat/completions",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"pixtral-12b-2409\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Extract all text from this image. Return ONLY the raw text, no formatting or explanations.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $binary.data.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"temperature\": 0\n}",
-        "options": {}
+        "jsonBody": "={\n  \"model\": \"{{ $env.MISTRAL_MODEL || 'pixtral-12b-2409' }}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Extract all text from this image. Return ONLY the raw text, no formatting or explanations.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $binary.data.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"temperature\": 0,\n  \"max_tokens\": {{ parseInt($env.MISTRAL_MAX_TOKENS) || 4096 }}\n}",
+        "options": {
+          "timeout": 60000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetweenRetries": 1000
+          }
+        }
       },
       "id": "mistral-ocr",
       "name": "Mistral OCR",
@@ -178,19 +226,19 @@
       "position": [1200, 100],
       "credentials": {
         "httpHeaderAuth": {
-          "id": "YOUR_MISTRAL_CREDENTIAL_ID",
           "name": "Mistral API"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
-        "modelId": "mistral.mistral-large-2402-v1:0",
+        "modelId": "={{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}",
         "messages": {
           "values": [
             {
               "role": "user",
-              "content": "You are a professional translator. \n1. Check the language of the input.\n2. If it is NOT German, translate it to German.\n3. If it IS German, output it as-is.\n4. Output ONLY the final text.\n\nInput:\n{{ $json.content || $json.data }}"
+              "content": "=You are a professional translator.\n1. Check the language of the input.\n2. If it is NOT {{ $env.TARGET_LANGUAGE || 'English' }}, translate it to {{ $env.TARGET_LANGUAGE || 'German' }}.\n3. If it IS {{ $env.TARGET_LANGUAGE || 'German' }}, output it as-is.\n4. Output ONLY the final text.\n\nInput:\n{{ $json.content }}"
             }
           ]
         },
@@ -203,10 +251,10 @@
       "position": [1400, 300],
       "credentials": {
         "aws": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -215,7 +263,7 @@
             {
               "id": "extract-text",
               "name": "content",
-              "value": "={{ $json.choices[0].message.content }}",
+              "value": "={{ $json.choices?.[0]?.message?.content || '' }}",
               "type": "string"
             }
           ]
@@ -230,29 +278,49 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "awsApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_CLASSIFICATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": {{ $json.content.length }}\n  }\n}",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ocr-tmp-key",
+              "name": "ocrTmpKey",
+              "value": "={{ 'tmp/ocr/' + $now.toUnix() + '-' + $('Loop Files').item.json.Key.split('/').pop() + '.txt' }}",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
-      "id": "lambda-update-after-ocr",
-      "name": "Update State: OCR Done",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1600, 100],
+      "id": "set-ocr-tmp-key",
+      "name": "Set OCR Tmp Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1600, 0]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
+        "fileName": "={{ $json.ocrTmpKey }}",
+        "fileContent": "={{ $('Extract OCR Text').item.json.content }}",
+        "options": {
+          "contentType": "text/plain",
+          "prefix": "tmp"
+        }
+      },
+      "id": "s3-upload-ocr-tmp",
+      "name": "Upload OCR Tmp",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [1800, 0],
       "credentials": {
-        "awsApi": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+        "awsS3Api": {
+          "name": "AWS S3"
         }
       }
     },
     {
       "parameters": {
-        "modelId": "mistral.mistral-large-2402-v1:0",
+        "modelId": "={{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}",
         "messages": {
           "values": [
             {
@@ -272,10 +340,10 @@
       "position": [1800, 100],
       "credentials": {
         "aws": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS"
         }
-      }
+      },
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -284,13 +352,13 @@
             {
               "id": "category",
               "name": "category",
-              "value": "={{ JSON.parse($json.content).category }}",
+              "value": "={{ (function() { try { return JSON.parse($json.content).category || 'uncategorized'; } catch(e) { return 'uncategorized'; } })() }}",
               "type": "string"
             },
             {
               "id": "subcategory",
               "name": "subcategory",
-              "value": "={{ JSON.parse($json.content).subcategory }}",
+              "value": "={{ (function() { try { return JSON.parse($json.content).subcategory || 'general'; } catch(e) { return 'general'; } })() }}",
               "type": "string"
             },
             {
@@ -311,45 +379,226 @@
     },
     {
       "parameters": {
-        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "awsApi",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"classification_completed_at\": \"{{ $now.toISO() }}\",\n    \"category\": \"{{ $json.category }}\",\n    \"subcategory\": \"{{ $json.subcategory }}\"\n  }\n}",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "classification-tmp-key",
+              "name": "classificationTmpKey",
+              "value": "={{ 'tmp/classification/' + $now.toUnix() + '-' + $('Loop Files').item.json.Key.split('/').pop() + '.json' }}",
+              "type": "string"
+            }
+          ]
+        },
         "options": {}
       },
-      "id": "lambda-update-after-classification",
-      "name": "Update State: Classification Done",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [2200, 100],
+      "id": "set-classification-tmp-key",
+      "name": "Set Classification Tmp Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2200, 0]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
+        "fileName": "={{ $json.classificationTmpKey }}",
+        "fileContent": "={{ $('Bedrock Classify').item.json.content || $('Bedrock Classify').item.json.data || JSON.stringify($('Bedrock Classify').item.json) }}",
+        "options": {
+          "contentType": "application/json"
+        }
+      },
+      "id": "s3-upload-classification-tmp",
+      "name": "Upload Classification Tmp",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [2400, 0],
       "credentials": {
-        "awsApi": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+        "awsS3Api": {
+          "name": "AWS S3"
         }
       }
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "translation-tmp-key",
+              "name": "translationTmpKey",
+              "value": "={{ 'tmp/translation/' + $now.toUnix() + '-' + $('Loop Files').item.json.Key.split('/').pop() + '.txt' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-translation-tmp-key",
+      "name": "Set Translation Tmp Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2400, 300]
+    },
+    {
+      "parameters": {
         "operation": "upload",
-        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
-        "fileName": "={{ $('Extract Classification').item.json.category }}/{{ $('Extract Classification').item.json.subcategory }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}",
-        "fileContent": "={{ $json.content }}",
+        "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
+        "fileName": "={{ $json.translationTmpKey }}",
+        "fileContent": "={{ $json.content || $json.data }}",
         "options": {
           "contentType": "text/plain"
         }
       },
-      "id": "s3-upload-result",
-      "name": "S3 Upload Result",
+      "id": "s3-upload-translation-tmp",
+      "name": "Upload Translation Tmp",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
       "position": [2600, 300],
       "credentials": {
         "awsS3Api": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "resume-category",
+              "name": "category",
+              "value": "={{ $json.body.metadata.category }}",
+              "type": "string"
+            },
+            {
+              "id": "resume-subcategory",
+              "name": "subcategory",
+              "value": "={{ $json.body.metadata.subcategory }}",
+              "type": "string"
+            },
+            {
+              "id": "resume-ocr-tmp",
+              "name": "ocrTmpKey",
+              "value": "={{ $json.body.metadata.ocr_tmp_path }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "load-state-metadata",
+      "name": "Load State Metadata",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
+        "fileKey": "={{ $json.ocrTmpKey }}",
+        "options": {}
+      },
+      "id": "s3-download-ocr-tmp",
+      "name": "Download OCR Tmp",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [1200, 500],
+      "credentials": {
+        "awsS3Api": {
+          "name": "AWS S3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "resume-content",
+              "name": "content",
+              "value": "={{ $json.data }}",
+              "type": "string"
+            },
+            {
+              "id": "resume-category",
+              "name": "category",
+              "value": "={{ $('Load State Metadata').item.json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "resume-subcategory",
+              "name": "subcategory",
+              "value": "={{ $('Load State Metadata').item.json.subcategory }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-translation-input-resume",
+      "name": "Prepare Translation Input (Resume)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 500]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "translation-input",
+              "name": "content",
+              "value": "={{ $('Extract OCR Text').item.json.content }}",
+              "type": "string"
+            },
+            {
+              "id": "translation-category",
+              "name": "category",
+              "value": "={{ $('Extract Classification').item.json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "translation-subcategory",
+              "name": "subcategory",
+              "value": "={{ $('Extract Classification').item.json.subcategory }}",
+              "type": "string"
+            },
+            {
+              "id": "translation-ocr-tmp",
+              "name": "ocrTmpKey",
+              "value": "={{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "prepare-translation-input",
+      "name": "Prepare Translation Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2400, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_CLASSIFICATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": {{ $('Extract OCR Text').item.json.content.length }},\n    \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "lambda-update-after-ocr",
+      "name": "Update State: OCR Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2000, 0],
+      "credentials": {
+        "awsApi": {
+          "name": "AWS API"
         }
       }
     },
@@ -360,18 +609,42 @@
         "nodeCredentialType": "awsApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"COMPLETED\",\n  \"metadata\": {\n    \"translation_completed_at\": \"{{ $now.toISO() }}\",\n    \"final_text_length\": {{ $json.content.length }},\n    \"output_path\": \"{{ $('Extract Classification').item.json.category }}/{{ $('Extract Classification').item.json.subcategory }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}\"\n  }\n}",
-        "options": {}
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"classification_completed_at\": \"{{ $now.toISO() }}\",\n    \"category\": \"{{ $('Extract Classification').item.json.category }}\",\n    \"subcategory\": \"{{ $('Extract Classification').item.json.subcategory }}\",\n    \"classification_tmp_path\": \"{{ $('Set Classification Tmp Key').item.json.classificationTmpKey }}\",\n    \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "lambda-update-after-classification",
+      "name": "Update State: Classification Done",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2600, 100],
+      "credentials": {
+        "awsApi": {
+          "name": "AWS API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "awsApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"COMPLETED\",\n  \"metadata\": {\n    \"translation_completed_at\": \"{{ $now.toISO() }}\",\n    \"final_text_length\": {{ ($json.content || $json.data || '').length }},\n    \"translation_tmp_path\": \"{{ $('Set Translation Tmp Key').item.json.translationTmpKey }}\",\n    \"output_path\": \"{{ ($json.category || $('Load State Metadata').item.json.category || $('Extract Classification').item.json.category) }}/{{ ($json.subcategory || $('Load State Metadata').item.json.subcategory || $('Extract Classification').item.json.subcategory) }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}\"\n  }\n}",
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "lambda-update-complete",
       "name": "Update State: Completed",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [2800, 300],
+      "position": [3000, 300],
       "credentials": {
         "awsApi": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS API"
         }
       }
     },
@@ -383,7 +656,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_OCR\",\n  \"metadata\": {\n    \"discovered_at\": \"{{ $now.toISO() }}\",\n    \"file_size\": {{ $('Loop Files').item.json.Size || 0 }}\n  }\n}",
-        "options": {}
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "lambda-mark-new",
       "name": "Mark as New File",
@@ -392,8 +667,29 @@
       "position": [1000, 0],
       "credentials": {
         "awsApi": {
-          "id": "YOUR_CREDENTIAL_ID",
-          "name": "AWS Connection"
+          "name": "AWS API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
+        "fileName": "={{ ($json.category || $('Load State Metadata').item.json.category || $('Extract Classification').item.json.category) }}/{{ ($json.subcategory || $('Load State Metadata').item.json.subcategory || $('Extract Classification').item.json.subcategory) }}/{{ $('Loop Files').item.json.Key.split('/').pop().replace(/\\.[^.]+$/, '.txt') }}",
+        "fileContent": "={{ $('Bedrock Translate').item.json.content || $('Bedrock Translate').item.json.data }}",
+        "options": {
+          "contentType": "text/plain; charset=utf-8",
+            "prefix": "outputs"
+        }
+      },
+      "id": "s3-upload-result",
+      "name": "S3 Upload Result",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [2800, 300],
+      "credentials": {
+        "awsS3Api": {
+          "name": "AWS S3"
         }
       }
     }
@@ -454,11 +750,13 @@
         ],
         [
           {
-            "node": "Bedrock Translate",
+            "node": "Load State Metadata",
             "type": "main",
             "index": 0
           }
-        ]
+        ],
+        [],
+        []
       ]
     },
     "Mark as New File": {
@@ -498,6 +796,28 @@
       "main": [
         [
           {
+            "node": "Set OCR Tmp Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set OCR Tmp Key": {
+      "main": [
+        [
+          {
+            "node": "Upload OCR Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload OCR Tmp": {
+      "main": [
+        [
+          {
             "node": "Update State: OCR Done",
             "type": "main",
             "index": 0
@@ -531,6 +851,28 @@
       "main": [
         [
           {
+            "node": "Set Classification Tmp Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Classification Tmp Key": {
+      "main": [
+        [
+          {
+            "node": "Upload Classification Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Classification Tmp": {
+      "main": [
+        [
+          {
             "node": "Update State: Classification Done",
             "type": "main",
             "index": 0
@@ -542,6 +884,39 @@
       "main": [
         [
           {
+            "node": "Prepare Translation Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Translation Input": {
+      "main": [
+        [
+          {
+            "node": "Set Translation Tmp Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Translation Input (Resume)": {
+      "main": [
+        [
+          {
+            "node": "Set Translation Tmp Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Translation Tmp Key": {
+      "main": [
+        [
+          {
             "node": "Bedrock Translate",
             "type": "main",
             "index": 0
@@ -550,6 +925,17 @@
       ]
     },
     "Bedrock Translate": {
+      "main": [
+        [
+          {
+            "node": "Upload Translation Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Translation Tmp": {
       "main": [
         [
           {
@@ -565,6 +951,39 @@
         [
           {
             "node": "Update State: Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update State: Completed": {
+      "main": [
+        [
+          {
+            "node": "Loop Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load State Metadata": {
+      "main": [
+        [
+          {
+            "node": "Download OCR Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download OCR Tmp": {
+      "main": [
+        [
+          {
+            "node": "Prepare Translation Input (Resume)",
             "type": "main",
             "index": 0
           }
