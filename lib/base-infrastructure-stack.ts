@@ -20,6 +20,8 @@ export class BaseInfrastructureStack extends cdk.Stack {
   public readonly mistralApiKeySecret: secretsmanager.ISecret;
   public readonly awsAccessKeyIdSecret: secretsmanager.ISecret;
   public readonly awsSecretAccessKeySecret: secretsmanager.ISecret;
+  public readonly n8nBasicAuthUserSecret: secretsmanager.ISecret;
+  public readonly n8nBasicAuthPasswordSecret: secretsmanager.ISecret;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -114,6 +116,30 @@ export class BaseInfrastructureStack extends cdk.Stack {
       },
     );
 
+    // Basic Auth credentials for n8n Web UI
+    this.n8nBasicAuthUserSecret = new secretsmanager.Secret(
+      this,
+      "N8nBasicAuthUser",
+      {
+        secretName: "n8n/basic-auth-user",
+        description: "n8n Web UI Basic Auth Username",
+        secretStringValue: cdk.SecretValue.unsafePlainText("admin"),
+      },
+    );
+
+    this.n8nBasicAuthPasswordSecret = new secretsmanager.Secret(
+      this,
+      "N8nBasicAuthPassword",
+      {
+        secretName: "n8n/basic-auth-password",
+        description: "n8n Web UI Basic Auth Password - CHANGE AFTER DEPLOYMENT",
+        generateSecretString: {
+          passwordLength: 16,
+          excludePunctuation: true,
+        },
+      },
+    );
+
     // ============================================================
     // IAM USER FOR N8N (AUTO-GENERATED CREDENTIALS)
     // ============================================================
@@ -199,6 +225,16 @@ export class BaseInfrastructureStack extends cdk.Stack {
     new cdk.CfnOutput(this, "MistralApiKeySecretName", {
       value: this.mistralApiKeySecret.secretName,
       description: "Mistral API Key Secret Name",
+    });
+
+    new cdk.CfnOutput(this, "N8nBasicAuthUserSecretName", {
+      value: this.n8nBasicAuthUserSecret.secretName,
+      description: "n8n Basic Auth Username Secret (default: admin)",
+    });
+
+    new cdk.CfnOutput(this, "N8nBasicAuthPasswordSecretArn", {
+      value: this.n8nBasicAuthPasswordSecret.secretArn,
+      description: "n8n Basic Auth Password Secret ARN - retrieve password from AWS Console",
     });
   }
 }

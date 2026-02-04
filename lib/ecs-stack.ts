@@ -23,6 +23,8 @@ export interface EcsStackProps extends cdk.StackProps {
   awsAccessKeyIdSecret: secretsmanager.ISecret;
   awsSecretAccessKeySecret: secretsmanager.ISecret;
   lambdaFunctionUrlSecret: secretsmanager.ISecret;
+  n8nBasicAuthUserSecret: secretsmanager.ISecret;
+  n8nBasicAuthPasswordSecret: secretsmanager.ISecret;
 }
 
 /**
@@ -96,6 +98,8 @@ export class EcsStack extends cdk.Stack {
     props.awsAccessKeyIdSecret.grantRead(executionRole);
     props.awsSecretAccessKeySecret.grantRead(executionRole);
     props.lambdaFunctionUrlSecret.grantRead(executionRole);
+    props.n8nBasicAuthUserSecret.grantRead(executionRole);
+    props.n8nBasicAuthPasswordSecret.grantRead(executionRole);
 
     const taskDefinition = new ecs.FargateTaskDefinition(this, "N8nTaskDef", {
       taskRole: taskRole,
@@ -127,6 +131,7 @@ export class EcsStack extends cdk.Stack {
       image: ecs.ContainerImage.fromDockerImageAsset(this.n8nImage),
       environment: {
         N8N_SECURE_COOKIE: "false",
+        N8N_BASIC_AUTH_ACTIVE: "true",
         S3_BUCKET_NAME: props.docBucket.bucketName,
         BATCH_SIZE: "1",
         TARGET_LANGUAGE: "English",
@@ -135,6 +140,12 @@ export class EcsStack extends cdk.Stack {
         MISTRAL_MAX_TOKENS: "4096"
       },
       secrets: {
+        N8N_BASIC_AUTH_USER: ecs.Secret.fromSecretsManager(
+          props.n8nBasicAuthUserSecret,
+        ),
+        N8N_BASIC_AUTH_PASSWORD: ecs.Secret.fromSecretsManager(
+          props.n8nBasicAuthPasswordSecret,
+        ),
         MISTRAL_API_KEY: ecs.Secret.fromSecretsManager(
           props.mistralApiKeySecret,
         ),

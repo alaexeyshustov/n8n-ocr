@@ -1,8 +1,8 @@
 #!/bin/bash
 # Helper script to get the n8n URL from ECS task
 
-CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name N8nCdkStack --query "Stacks[0].Outputs[?OutputKey=='N8nClusterName'].OutputValue" --output text)
-SERVICE_NAME=$(aws cloudformation describe-stacks --stack-name N8nCdkStack --query "Stacks[0].Outputs[?OutputKey=='N8nServiceName'].OutputValue" --output text)
+CLUSTER_NAME=$(aws cloudformation describe-stacks --stack-name N8nEcsService --query "Stacks[0].Outputs[?OutputKey=='N8nClusterName'].OutputValue" --output text)
+SERVICE_NAME=$(aws cloudformation describe-stacks --stack-name N8nEcsService --query "Stacks[0].Outputs[?OutputKey=='N8nServiceName'].OutputValue" --output text)
 
 if [ -z "$CLUSTER_NAME" ] || [ -z "$SERVICE_NAME" ]; then
   echo "Error: Could not find cluster or service name from CloudFormation stack"
@@ -27,15 +27,15 @@ ENI_ID=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN" --
 if [ -z "$ENI_ID" ]; then
   # For EC2 tasks, get the container instance
   CONTAINER_INSTANCE=$(aws ecs describe-tasks --cluster "$CLUSTER_NAME" --tasks "$TASK_ARN" --query 'tasks[0].containerInstanceArn' --output text)
-  
+
   if [ -z "$CONTAINER_INSTANCE" ]; then
     echo "Error: Could not find container instance"
     exit 1
   fi
-  
+
   # Get the EC2 instance ID
   INSTANCE_ID=$(aws ecs describe-container-instances --cluster "$CLUSTER_NAME" --container-instances "$CONTAINER_INSTANCE" --query 'containerInstances[0].ec2InstanceId' --output text)
-  
+
   # Get the public IP
   PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$INSTANCE_ID" --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
 else

@@ -29,14 +29,14 @@ Deploys a production-ready n8n instance with:
 
 ```
 ECS Cluster (n8n-cluster)
-  └─ EC2 Spot Instance (t3.small, ECS-Optimized AMI)
+  └─ Fargate Task
       └─ ECS Task: n8n (custom Docker image from ECR)
-          ├─ Port 5678 (Web UI)
+          ├─ Port 5678 (Web UI - Basic Auth Protected)
           └─ Mounted EFS: /home/node/.n8n (encrypted, persistent)
 
 Scheduled Scaling:
   - Scale down to 0 at 10 PM UTC (night)
-  - Scale up to 1 at 8 AM UTC (morning)
+  - Scale up to 1 at 9 AM UTC (morning)
 
 AWS Resources:
   - ECR Repository: Custom n8n image with workflows baked in
@@ -45,7 +45,10 @@ AWS Resources:
   - DynamoDB Table: DocPipeline (partition key: file_name)
   - Lambda Function: State Manager (Python 3.12, manages DynamoDB state)
     └─ Function URL: HTTPS endpoint with IAM auth
-  - Secrets Manager: Mistral API key (n8n/mistral-api-key)
+  - Secrets Manager: 
+    ├─ Mistral API key (n8n/mistral-api-key)
+    ├─ Basic Auth Username (n8n/basic-auth-user)
+    └─ Basic Auth Password (n8n/basic-auth-password)
   - IAM User: n8n-bot-user (with auto-generated access keys)
   - IAM Role: Task role with S3, DynamoDB, Bedrock permissions
   - Security Group: No default ingress rules (use add-my-ip.sh to add your IP)

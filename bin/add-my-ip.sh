@@ -21,13 +21,13 @@ echo "✅ Your public IP: $MY_IP"
 echo "🔍 Looking up security group from CloudFormation stack..."
 
 SECURITY_GROUP_ID=$(aws cloudformation describe-stacks \
-    --stack-name N8nEcsService \
-    --query 'Stacks[0].Outputs[?OutputKey==`InstanceSecurityGroupId`].OutputValue' \
+    --stack-name N8nBaseInfrastructure \
+    --query 'Stacks[0].Outputs[?OutputKey==`SecurityGroupId`].OutputValue' \
     --output text 2>/dev/null)
 
 if [ -z "$SECURITY_GROUP_ID" ]; then
-    echo "❌ Could not find security group. Make sure the stack 'N8nEcsService' is deployed."
-    echo "   Run: cdk deploy N8nEcsService"
+    echo "❌ Could not find security group. Make sure the stack 'N8nBaseInfrastructure' is deployed."
+    echo "   Run: cdk deploy N8nBaseInfrastructure"
     exit 1
 fi
 
@@ -54,7 +54,6 @@ aws ec2 authorize-security-group-ingress \
     --protocol tcp \
     --port 5678 \
     --cidr "${MY_IP}/32" \
-    --description "n8n Web UI access from $(whoami)@$(hostname) on $(date +%Y-%m-%d)"
 
 echo "✅ Successfully added ingress rule!"
 echo ""

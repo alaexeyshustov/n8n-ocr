@@ -4,8 +4,9 @@ Deploy a complete **n8n workflow automation platform** on AWS with persistent st
 
 ## What This Deploys
 
-- **n8n** workflow automation tool running on **ECS with EC2 Spot instances** for cost optimization
-- **Scheduled scaling** to turn off at night (10 PM UTC) and on in the morning (8 AM UTC)
+- **n8n** workflow automation tool running on **ECS with Fargate** for serverless container management
+- **Basic Authentication** protecting the web UI with auto-generated credentials
+- **Scheduled scaling** to turn off at night (10 PM UTC) and on in the morning (9 AM UTC)
 - **Persistent EFS volume** to retain n8n data across task restarts
 - **S3 bucket** for document processing/storage
 - **DynamoDB table** for tracking document pipeline states
@@ -18,25 +19,26 @@ Deploy a complete **n8n workflow automation platform** on AWS with persistent st
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
+┌────────────────────────────────────────────────────┐
 │  ECS Cluster (n8n-cluster)                         │
 │  ┌──────────────────────────────────────┐          │
-│  │  EC2 Spot Instance (t3.small)        │          │
+│  │  Fargate Task                        │          │
 │  │  ┌────────────────────────────────┐  │          │
 │  │  │ ECS Task: n8n (custom image)   │  │          │
 │  │  │ Port 5678 (Web UI)             │  │          │
+│  │  │ 🔒 Basic Auth Protected        │  │          │
 │  │  └────────────────────────────────┘  │          │
 │  └──────────────────────────────────────┘          │
-│           ↓ mounted volume                          │
+│           ↓ mounted volume                         │
 │  ┌──────────────────────────────────────┐          │
 │  │  EFS File System (encrypted)         │          │
 │  │  /home/node/.n8n                     │          │
 │  └──────────────────────────────────────┘          │
-│                                                     │
-│  Scheduled Scaling:                                 │
+│                                                    │
+│  Scheduled Scaling:                                │
 │  • Scale down to 0 at 10 PM UTC (night)            │
-│  • Scale up to 1 at 8 AM UTC (morning)             │
-└─────────────────────────────────────────────────────┘
+│  • Scale up to 1 at 9 AM UTC (morning)             │
+└────────────────────────────────────────────────────┘
               ↓ Task IAM Role with permissions
 ┌─────────────────────────────────────────────────────┐
 │  AWS Resources:                                     │
@@ -47,7 +49,10 @@ Deploy a complete **n8n workflow automation platform** on AWS with persistent st
 │    └─ Function URL: HTTPS endpoint                  │
 │  - IAM User (n8n-bot-user) with access keys         │
 │  - Bedrock API access                               │
-│  - Secrets Manager (Mistral API key)                │
+│  - Secrets Manager:                                 │
+│    ├─ Mistral API key                               │
+│    ├─ Basic Auth Username (admin)                   │
+│    └─ Basic Auth Password (auto-generated)          │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -145,7 +150,29 @@ Or manually via AWS Console:
 
 **Note:** The service scales down to 0 tasks at 10 PM UTC and scales back up to 1 task at 8 AM UTC. You can manually adjust the desired count in the ECS console if needed.
 
-### 8. Save the Deployment Outputs
+### 8. Get Basic Auth Credentials
+
+n8n is protected with HTTP Basic Authentication. Retrieve your auto-generated credentials:
+
+```bash
+./bin/get-n8n-credentials.sh
+```
+
+This will display:
+- **Username**: admin (default)
+- **Password**: Auto-generated 16-character password
+
+**To change the password:**
+
+```bash
+aws secretsmanager update-secret \
+  --secret-id n8n/basic-auth-password \
+  --secret-string "YOUR_NEW_PASSWORD"
+```
+
+Then restart the ECS task for the change to take effect.
+
+### 9. Save the Deployment Outputs
 
 After deployment, save these values from the CDK outputs:
 
