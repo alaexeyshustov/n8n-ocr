@@ -233,21 +233,21 @@
     },
     {
       "parameters": {
-        "modelId": "={{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}",
-        "messages": {
-          "values": [
-            {
-              "role": "user",
-              "content": "=You are a professional translator.\n1. Check the language of the input.\n2. If it is NOT {{ $env.TARGET_LANGUAGE || 'English' }}, translate it to {{ $env.TARGET_LANGUAGE || 'German' }}.\n3. If it IS {{ $env.TARGET_LANGUAGE || 'German' }}, output it as-is.\n4. Output ONLY the final text.\n\nInput:\n{{ $json.content }}"
-            }
-          ]
-        },
-        "options": {}
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "aws",
+        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a professional translator.\\n1. Check the language of the input.\\n2. If it is NOT {{ $env.TARGET_LANGUAGE || 'German' }}, translate it to {{ $env.TARGET_LANGUAGE || 'German' }}.\\n3. If it IS {{ $env.TARGET_LANGUAGE || 'German' }}, output it as-is.\\n4. Output ONLY the final text.\\n\\nInput:\\n{{ $json.content }}\"\n    }\n  ],\n  \"max_tokens\": 4096,\n  \"temperature\": 0.1\n}",
+        "options": {
+          "timeout": 60000
+        }
       },
       "id": "bedrock-translate",
       "name": "Bedrock Translate",
-      "type": "n8n-nodes-base.awsBedrock",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1400, 300],
       "credentials": {
         "aws": {
@@ -255,6 +255,26 @@
         }
       },
       "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "extract-translation",
+              "name": "content",
+              "value": "={{ $json.choices?.[0]?.message?.content || $json.content?.[0]?.text || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-translation-response",
+      "name": "Extract Translation Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1600, 300]
     },
     {
       "parameters": {
@@ -320,23 +340,21 @@
     },
     {
       "parameters": {
-        "modelId": "={{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}",
-        "messages": {
-          "values": [
-            {
-              "role": "user",
-              "content": "=You are a document classifier. Analyze the following text and classify it into a category and subcategory.\n\nReturn ONLY a JSON object with this exact structure:\n{\n  \"category\": \"<main category>\",\n  \"subcategory\": \"<specific subcategory>\"\n}\n\nUse clear, filesystem-safe names (lowercase, hyphens instead of spaces).\n\nText to classify:\n{{ $json.content }}"
-            }
-          ]
-        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "aws",
+        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a document classifier. Analyze the following text and classify it into a category and subcategory.\\n\\nReturn ONLY a JSON object with this exact structure:\\n{\\n  \\\"category\\\": \\\"<main category>\\\",\\n  \\\"subcategory\\\": \\\"<specific subcategory>\\\"\\n}\\n\\nUse clear, filesystem-safe names (lowercase, hyphens instead of spaces).\\n\\nText to classify:\\n{{ $json.content }}\"\n    }\n  ],\n  \"max_tokens\": 1024,\n  \"temperature\": 0\n}",
         "options": {
-          "temperature": 0
+          "timeout": 60000
         }
       },
       "id": "bedrock-classify",
       "name": "Bedrock Classify",
-      "type": "n8n-nodes-base.awsBedrock",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1800, 100],
       "credentials": {
         "aws": {
@@ -344,6 +362,26 @@
         }
       },
       "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "extract-classify",
+              "name": "content",
+              "value": "={{ $json.choices?.[0]?.message?.content || $json.content?.[0]?.text || '' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-classify-response",
+      "name": "Extract Classify Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2000, 0]
     },
     {
       "parameters": {
@@ -402,7 +440,7 @@
         "operation": "upload",
         "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
         "fileName": "={{ $json.classificationTmpKey }}",
-        "fileContent": "={{ $('Bedrock Classify').item.json.content || $('Bedrock Classify').item.json.data || JSON.stringify($('Bedrock Classify').item.json) }}",
+        "fileContent": "={{ $('Extract Classify Response').item.json.content || '' }}",
         "options": {
           "contentType": "application/json"
         }
@@ -676,7 +714,7 @@
         "operation": "upload",
         "bucketName": "={{ $env.S3_BUCKET_NAME }}",
         "fileName": "={{ ($json.category || $('Load State Metadata').item.json.category || $('Extract Classification').item.json.category) }}/{{ ($json.subcategory || $('Load State Metadata').item.json.subcategory || $('Extract Classification').item.json.subcategory) }}/{{ $('Loop Files').item.json.Key.split('/').pop().replace(/\\.[^.]+$/, '.txt') }}",
-        "fileContent": "={{ $('Bedrock Translate').item.json.content || $('Bedrock Translate').item.json.data }}",
+        "fileContent": "={{ $('Extract Translation Response').item.json.content || '' }}",
         "options": {
           "contentType": "text/plain; charset=utf-8",
             "prefix": "outputs"
@@ -840,6 +878,17 @@
       "main": [
         [
           {
+            "node": "Extract Classify Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Classify Response": {
+      "main": [
+        [
+          {
             "node": "Extract Classification",
             "type": "main",
             "index": 0
@@ -925,6 +974,17 @@
       ]
     },
     "Bedrock Translate": {
+      "main": [
+        [
+          {
+            "node": "Extract Translation Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Translation Response": {
       "main": [
         [
           {

@@ -65,6 +65,7 @@ lambda/state-manager.py  # Lambda function for DynamoDB state management
 lambda/README.md         # Lambda API documentation
 workflows/ocr.json       # Sample n8n workflow with Mistral OCR (baked into Docker image)
 Dockerfile               # Custom n8n image with workflows and Python
+import-workflows.sh      # Workflow import script (runs on container startup)
 .dockerignore            # Docker build exclusions
 test/n8n-cdk.test.ts     # Jest snapshot tests
 ```
@@ -99,10 +100,16 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 - **Base**: n8nio/n8n:latest
 - **Customizations**:
   - Python 3 and pip installed
-  - Workflows copied to `/home/node/.n8n/`
+  - Workflows copied to `/data/workflows-import/` (persistent location)
+  - Import script at `/usr/local/bin/import-workflows.sh`
+  - Entrypoint runs import script before n8n startup
   - Built and pushed to ECR during deployment
 
-7. Installs Python in container (for n8n code nodes)
+**Workflow Import Mechanism:**
+- Workflows stored in `/data/workflows-import/` (not overridden by EFS)
+- On first container start: Script copies workflows to `/home/node/.n8n/` (EFS-backed)
+- Marker file `.workflows-imported` prevents re-importing
+- See `import-workflows.sh` for implementation details
 
 ### IAM Setup
 
