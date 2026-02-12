@@ -172,7 +172,22 @@ aws secretsmanager update-secret \
 
 Then restart the ECS task for the change to take effect.
 
-### 9. Save the Deployment Outputs
+### 9. About the Empty Credentials Section
+
+⚠️ **IMPORTANT**: When you first log in to n8n, **Settings → Credentials will be EMPTY**. This is normal!
+
+**Why?** n8n does NOT automatically create credential entries from environment variables.
+
+**What to do?** You have two options:
+
+1. **Use environment variables directly** in workflows: `{{ $env.AWS_ACCESS_KEY_ID }}`
+2. **Create credential entries manually** in Settings → Credentials
+
+📖 **See [docs/EMPTY-CREDENTIALS-EXPLAINED.md](docs/EMPTY-CREDENTIALS-EXPLAINED.md)** for detailed explanation and step-by-step guide.
+
+📋 **Fresh deployment checklist**: [docs/FRESH-DEPLOYMENT-CHECKLIST.md](docs/FRESH-DEPLOYMENT-CHECKLIST.md) - Verify everything is working correctly.
+
+### 10. Save the Deployment Outputs
 
 After deployment, save these values from the CDK outputs:
 
@@ -207,23 +222,57 @@ Or via AWS Console:
 4. Replace placeholder with your Mistral API key
 5. Save
 
-### 8. Access Secrets in n8n
+### 8. Configure Credentials in n8n UI
 
-All secrets are automatically injected into the n8n container as environment variables:
+⚠️ **Important**: On fresh deployment, the Credentials section in n8n will be **empty**. You must manually create credential entries.
 
-- **MISTRAL_API_KEY** - Your Mistral AI API key
-- **AWS_ACCESS_KEY_ID** - AWS credentials for accessing services
-- **AWS_SECRET_ACCESS_KEY** - AWS secret key
-- **LAMBDA_STATE_MANAGER_URL** - Lambda Function URL for state management
-- **S3_BUCKET_NAME** - S3 bucket name
+While environment variables are available in the container, n8n does NOT automatically create credential entries from them. You have two options:
 
-You can access these in your n8n workflows using the `{{ $env.VARIABLE_NAME }}` syntax. For example:
+#### Option A: Use Environment Variables Directly (Simpler)
 
-- `{{ $env.MISTRAL_API_KEY }}`
-- `{{ $env.LAMBDA_STATE_MANAGER_URL }}`
-- `{{ $env.S3_BUCKET_NAME }}`
+Access secrets in workflows using `{{ $env.VARIABLE_NAME }}`:
 
-**Note:** The workflow credentials (YOUR_CREDENTIAL_ID placeholders) in [workflows/ocr.json](workflows/ocr.json) should be replaced with references to environment variables for automatic configuration.
+- `{{ $env.MISTRAL_API_KEY }}` - Mistral AI API key
+- `{{ $env.AWS_ACCESS_KEY_ID }}` - AWS access key
+- `{{ $env.AWS_SECRET_ACCESS_KEY }}` - AWS secret key  
+- `{{ $env.LAMBDA_STATE_MANAGER_NAME }}` - Lambda Function Name (default: `n8n-doc-pipeline-state-manager`)
+- `{{ $env.S3_BUCKET_NAME }}` - S3 bucket name
+
+**Example in HTTP Request node:**
+```
+Header Name: Authorization
+Header Value: Bearer {{ $env.MISTRAL_API_KEY }}
+```
+
+#### Option B: Create Credential Entries (Recommended for imported workflows)
+
+The imported OCR workflow uses credential placeholders that need to be replaced:
+
+**1. Create AWS Credential:**
+- In n8n: Settings → Credentials → New Credential → "AWS"
+- Access Key ID: Get from CloudFormation outputs or use `{{ $env.AWS_ACCESS_KEY_ID }}`
+- Secret Access Key: Get from CloudFormation outputs or use `{{ $env.AWS_SECRET_ACCESS_KEY }}`
+- Region: Your AWS region (e.g., `us-east-1`)
+- Test and Save
+
+**2. Create Mistral API Credential:**
+- Settings → Credentials → New Credential → "Header Auth"
+- Name: `Mistral API`
+- Header Name: `Authorization`
+- Header Value: `Bearer {{ $env.MISTRAL_API_KEY }}`
+- Save
+
+**3. Fix Workflow Credentials:**
+- Open OCR Pipeline workflow
+- Click "Fix credentials" button at top
+- Assign your AWS credential to all Lambda nodes
+- Save workflow
+
+**Get CloudFormation outputs:**
+```bash
+aws cloudformation describe-stacks --stack-name N8nBaseInfrastructure \
+  --query 'Stacks[0].Outputs'
+```
 
 Get your Mistral API key from: https://console.mistral.ai/
 
@@ -233,7 +282,7 @@ After accessing n8n, add these environment variables:
 
 1. Go to **Settings** → **Environment Variables**
 2. Add:
-   - `LAMBDA_STATE_MANAGER_URL` = [StateManagerFunctionUrl from outputs]
+   - `LAMBDA_STATE_MANAGER_NAME` = `n8n-doc-pipeline-state-manager` (or use the function name from outputs)
    - `S3_BUCKET_NAME` = [BucketName from outputs]
 3. Save and restart workflows
 
@@ -268,13 +317,13 @@ npx cdk destroy        # Tear down stack (EBS volume retained)
 ### Importing the Sample OCR Workflow
 
 1. Access n8n UI at your deployment URL
-2. **Set environment variable**: Add `LAMBDA_STATE_MANAGER_URL` with the Function URL from outputs
+2. **Set environment variable**: Add `LAMBDA_STATE_MANAGER_NAME` = `n8n-doc-pipeline-state-manager` (optional, this is the default)
 3. Go to **Workflows** → **Import from File**
 4. Upload [workflows/ocr.json](workflows/ocr.json)
 5. Update the workflow:
-   - Replace `YOUR_CREDENTIAL_ID` with your AWS credentials (in all nodes)
+   - Replace `AWS_CREDENTIAL_ID` with your AWS credentials ID (in all AWS Lambda and S3 nodes)
    - Set correct S3 bucket name (from deployment outputs)
-   - The workflow now uses Lambda for state management automatically
+   - The workflow now uses direct Lambda invocation for state management
 
 ### How the Workflow Works
 
@@ -301,27 +350,74 @@ The workflow uses:
 
 ### Creating AWS Credentials in n8n
 
+⚠️ **On Fresh Deployment**: Settings → Credentials will be **EMPTY**. n8n does NOT auto-create credentials from environment variables.
+
+**Two Ways to Use AWS Credentials:**
+
+#### Quick Method: Use Environment Variables
+In any node requiring AWS credentials, use expressions:
+- Access Key: `{{ $env.AWS_ACCESS_KEY_ID }}`
+- Secret Key: `{{ $env.AWS_SECRET_ACCESS_KEY }}`
+
+#### Proper Method: Create Credential Entry
 1. In n8n: **Settings** → **Credentials** → **New Credential**
 2. Search for "AWS"
-3. Enter the access keys from deployment outputs
+3. Choose how to enter credentials:
+   
+   **Option A - From CloudFormation Outputs:**
+   ```bash
+   # Get the actual values
+   aws cloudformation describe-stacks --stack-name N8nBaseInfrastructure \
+     --query 'Stacks[0].Outputs' --output table
+   ```
+   Copy/paste the Access Key ID and Secret Access Key values.
+   
+   **Option B - Reference Environment Variables:**
+   - Access Key ID: `{{ $env.AWS_ACCESS_KEY_ID }}`
+   - Secret Access Key: `{{ $env.AWS_SECRET_ACCESS_KEY }}`
+   
 4. Set your AWS region (e.g., `us-east-1`)
-5. Test connection and save
-6. Use this credential in all AWS nodes (S3, Bedrock, HTTP Request with AWS auth)
+5. **Test connection** to verify credentials work
+6. **Save** the credential
+
+**After creating the credential:**
+- Open the OCR Pipeline workflow  
+- You'll see credential warnings on nodes (this is normal for imported workflows)
+- Click **"Fix credentials"** button at the top
+- Select your AWS credential from dropdown
+- All nodes will be updated automatically
+
+📖 **Troubleshooting**: If you get permission errors, see [docs/LAMBDA-PERMISSION-FIX.md](docs/LAMBDA-PERMISSION-FIX.md)
 
 ### Creating Mistral Credentials in n8n
 
+⚠️ **On Fresh Deployment**: The Credentials section is **EMPTY**. You must create this manually.
+
+**Two Ways to Use Mistral API Key:**
+
+#### Quick Method: Use Environment Variable
+In HTTP Request nodes calling Mistral API:
+- Header Name: `Authorization`
+- Header Value: `Bearer {{ $env.MISTRAL_API_KEY }}`
+
+#### Proper Method: Create Credential Entry
 1. In n8n: **Settings** → **Credentials** → **New Credential**
 2. Search for "Header Auth"
-3. Set:
+3. Configure:
    - **Name**: `Mistral API`
    - **Header Name**: `Authorization`
-   - **Header Value**: `Bearer YOUR_MISTRAL_API_KEY`
-4. Get your API key from: https://console.mistral.ai/
-5. Test and save
-6. Use this credential in the "Mistral OCR" node
+   - **Header Value**: `Bearer {{ $env.MISTRAL_API_KEY }}`
+     
+     OR if you want to hardcode it:
+     - **Header Value**: `Bearer YOUR_ACTUAL_MISTRAL_API_KEY`
+     
+4. **Test** (if using hardcoded key)
+5. **Save**
+6. Use this credential in the "Mistral OCR" HTTP Request node
 
-**Alternative (using AWS Secrets Manager):**
-The Mistral API key is stored in AWS Secrets Manager and the n8n IAM user has read access. You can fetch it programmatically in n8n workflows if needed.
+**Get your Mistral API key from:** https://console.mistral.ai/
+
+**Note**: The API key is also stored in AWS Secrets Manager (`n8n/mistral-api-key`) and the n8n IAM user has read access, so workflows can fetch it programmatically if needed.
 
 ## Important Configuration
 

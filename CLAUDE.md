@@ -105,6 +105,12 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
   - Entrypoint runs import script before n8n startup
   - Built and pushed to ECR during deployment
 
+**Basic Authentication:**
+- Enabled via `N8N_BASIC_AUTH_ACTIVE=true`
+- User management disabled (`N8N_USER_MANAGEMENT_DISABLED=true`) to force basic auth
+- Credentials stored in AWS Secrets Manager
+- No user signup or multi-user support
+
 **Workflow Import Mechanism:**
 - Workflows stored in `/data/workflows-import/` (not overridden by EFS)
 - On first container start: Script copies workflows to `/home/node/.n8n/` (EFS-backed)

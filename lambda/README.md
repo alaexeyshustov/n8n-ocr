@@ -107,33 +107,33 @@ NULL → PENDING_OCR → PENDING_CLASSIFICATION → PENDING_TRANSLATION → COMP
 
 ## Usage in n8n
 
-The n8n workflow uses HTTP Request nodes with AWS IAM authentication to call this function.
+The n8n workflow uses AWS Lambda invoke nodes to call this function directly.
 
 ### Environment Variable Required
 
-Set in n8n: `LAMBDA_STATE_MANAGER_URL` = [Function URL from CDK outputs]
+Set in n8n: `LAMBDA_STATE_MANAGER_NAME` = `n8n-doc-pipeline-state-manager` (default function name)
 
-### Example n8n HTTP Request Node
+### Example n8n AWS Lambda Node
 
 ```json
 {
-  "url": "={{ $env.LAMBDA_STATE_MANAGER_URL }}",
-  "authentication": "predefinedCredentialType",
-  "nodeCredentialType": "awsApi",
-  "sendBody": true,
-  "specifyBody": "json",
-  "jsonBody": {
-    "operation": "GET",
-    "file_name": "{{ $('Loop Files').item.json.Key }}"
+  "operation": "invoke",
+  "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
+  "payload": "json",
+  "payloadJson": "={\n  \"operation\": \"GET\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\"\n}",
+  "credentials": {
+    "aws": {
+      "name": "AWS"
+    }
   }
 }
 ```
 
 ## Deployment
 
-The function is automatically deployed by the CDK stack in [lib/n8n-cdk-stack.ts](../lib/n8n-cdk-stack.ts).
+The function is automatically deployed by the CDK stack in [lib/state-machine-stack.ts](../lib/state-machine-stack.ts).
 
 ## Permissions
 
 - **Lambda Execution Role**: Read/write access to DynamoDB table
-- **n8n IAM User**: Invoke function permission (via Function URL with IAM auth)
+- **n8n IAM User**: Direct Lambda invoke permission (granted by CDK)

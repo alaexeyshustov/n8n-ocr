@@ -22,7 +22,7 @@ export interface EcsStackProps extends cdk.StackProps {
   mistralApiKeySecret: secretsmanager.ISecret;
   awsAccessKeyIdSecret: secretsmanager.ISecret;
   awsSecretAccessKeySecret: secretsmanager.ISecret;
-  lambdaFunctionUrlSecret: secretsmanager.ISecret;
+  stateManagerFunctionName: string;
   n8nBasicAuthUserSecret: secretsmanager.ISecret;
   n8nBasicAuthPasswordSecret: secretsmanager.ISecret;
 }
@@ -97,7 +97,6 @@ export class EcsStack extends cdk.Stack {
     props.mistralApiKeySecret.grantRead(executionRole);
     props.awsAccessKeyIdSecret.grantRead(executionRole);
     props.awsSecretAccessKeySecret.grantRead(executionRole);
-    props.lambdaFunctionUrlSecret.grantRead(executionRole);
     props.n8nBasicAuthUserSecret.grantRead(executionRole);
     props.n8nBasicAuthPasswordSecret.grantRead(executionRole);
 
@@ -132,7 +131,13 @@ export class EcsStack extends cdk.Stack {
       environment: {
         N8N_SECURE_COOKIE: "false",
         N8N_BASIC_AUTH_ACTIVE: "true",
+        N8N_USER_MANAGEMENT_DISABLED: "true",
+        N8N_DIAGNOSTICS_ENABLED: "false",
+        N8N_PERSONALIZATION_ENABLED: "false",
+        N8N_VERSION_NOTIFICATIONS_ENABLED: "false",
+        N8N_TEMPLATES_ENABLED: "false",
         S3_BUCKET_NAME: props.docBucket.bucketName,
+        LAMBDA_STATE_MANAGER_NAME: props.stateManagerFunctionName,
         BATCH_SIZE: "1",
         TARGET_LANGUAGE: "English",
         BEDROCK_MODEL: "mistral.mistral-large-2402-v1:0",
@@ -154,9 +159,6 @@ export class EcsStack extends cdk.Stack {
         ),
         AWS_SECRET_ACCESS_KEY: ecs.Secret.fromSecretsManager(
           props.awsSecretAccessKeySecret,
-        ),
-        LAMBDA_STATE_MANAGER_URL: ecs.Secret.fromSecretsManager(
-          props.lambdaFunctionUrlSecret,
         ),
       },
       logging: ecs.LogDriver.awsLogs({

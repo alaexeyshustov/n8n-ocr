@@ -31,7 +31,7 @@ const ecsStack = new EcsStack(app, 'N8nEcsService', {
   mistralApiKeySecret: baseStack.mistralApiKeySecret,
   awsAccessKeyIdSecret: baseStack.awsAccessKeyIdSecret,
   awsSecretAccessKeySecret: baseStack.awsSecretAccessKeySecret,
-  lambdaFunctionUrlSecret: stateMachineStack.lambdaFunctionUrlSecret,
+  stateManagerFunctionName: stateMachineStack.stateManagerFunction.functionName,
   n8nBasicAuthUserSecret: baseStack.n8nBasicAuthUserSecret,
   n8nBasicAuthPasswordSecret: baseStack.n8nBasicAuthPasswordSecret,
 });
