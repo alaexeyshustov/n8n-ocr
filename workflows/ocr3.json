@@ -199,8 +199,8 @@
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
       "position": [
-        64,
-        0
+        0,
+        -112
       ],
       "credentials": {
         "aws": {
@@ -208,28 +208,6 @@
           "name": "AWS (IAM) account"
         }
       }
-    },
-    {
-      "parameters": {
-        "url": "https://api.mistral.ai/v1/chat/completions",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"{{ $env.MISTRAL_MODEL || 'pixtral-12b-2409' }}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Extract all text from this image. Return ONLY the raw text, no formatting or explanations.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $binary.data.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"temperature\": 0,\n  \"max_tokens\": {{ parseInt($env.MISTRAL_MAX_TOKENS) || 4096 }}\n}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "id": "faf11744-603f-4226-b76e-bfb82da9afac",
-      "name": "Mistral OCR",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        240,
-        0
-      ],
-      "continueOnFail": true
     },
     {
       "parameters": {
@@ -252,6 +230,12 @@
         496,
         224
       ],
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      },
       "continueOnFail": true
     },
     {
@@ -279,55 +263,11 @@
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "extract-text",
-              "name": "content",
-              "value": "={{ $json.choices?.[0]?.message?.content || '' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "b0c36dce-033a-48aa-9d09-621870cb431b",
-      "name": "Extract OCR Text",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        400,
-        0
-      ]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "ocr-tmp-key",
-              "name": "ocrTmpKey",
-              "value": "={{ 'tmp/ocr/' + $now.toUnix() + '-' + $('Loop Files').item.json.Key.split('/').pop() + '.txt' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "f0b53b10-7558-4905-814d-c9f889a6a34b",
-      "name": "Set OCR Tmp Key",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        560,
-        0
-      ]
-    },
-    {
-      "parameters": {
         "operation": "upload",
-        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
-        "fileName": "={{ $json.ocrTmpKey }}",
+        "bucketName": "=n8nbaseinfrastructure-docprocessingbucketab4370d9-fqqw9dgozz3s",
+        "fileName": "={{ $json.file }}",
+        "binaryData": false,
+        "fileContent": "={{ $json.markdown }}",
         "additionalFields": {}
       },
       "id": "fecfea09-37cf-431e-b5d6-151d7cfb2d20",
@@ -335,8 +275,8 @@
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
       "position": [
-        720,
-        0
+        1088,
+        -144
       ],
       "credentials": {
         "aws": {
@@ -674,13 +614,13 @@
     {
       "parameters": {
         "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
-        "payload": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": {{ $('Extract OCR Text').item.json.content.length }},\n    \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"\n  }\n}"
+        "payload": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": \"{{ $('Mistral OCR pdf').item.json.usage_info.doc_size_bytes }}\",\n    \"ocr_tmp_path\": \"{{ $('Code in JavaScript').item.json.file }}\"\n  }\n}"
       },
       "type": "n8n-nodes-base.awsLambda",
       "typeVersion": 1,
       "position": [
-        912,
-        0
+        1264,
+        -144
       ],
       "id": "188b8570-909f-453c-98fe-df7cb1f9f14e",
       "name": "Mark OCR done",
@@ -756,8 +696,8 @@
       "type": "n8n-nodes-base.awsLambda",
       "typeVersion": 1,
       "position": [
-        -160,
-        0
+        -192,
+        -112
       ],
       "id": "0fc55429-bde0-4ca6-a97a-91a8adb781dd",
       "name": "AWS Lambda",
@@ -767,6 +707,147 @@
           "name": "AWS (IAM) account"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "destinationKey": "base64string",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        -112
+      ],
+      "id": "23a8afac-0fa3-430c-a117-6e4cd8ab742a",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst pages = $input.first()?.json?.pages || []\nconst markdown = pages.reduce(\n  (accumulator, page) => [accumulator, page.markdown].join(\"\\n\"), \"\",\n);\n\nconst file_name =  $('Loop Files').first().json.Key\nreturn { \n  markdown: markdown,\n  file: `tmp/ocr/${$now.toString()}/${file_name}.md`,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -144
+      ],
+      "id": "d37cdc34-7eea-45d5-9859-c831781ba47e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"document_url\",\n    \"document_url\": \"data:application/pdf;base64,{{ $json.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "faf11744-603f-4226-b76e-bfb82da9afac",
+      "name": "Mistral OCR pdf",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        -208
+      ],
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "fl8BbyqzLEROgUBr",
+          "name": "Mistral Cloud account"
+        },
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5da00862-d9df-412e-890a-1dd603913af2",
+              "leftValue": "={{ $json.extension }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": "={{ false }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        528,
+        -112
+      ],
+      "id": "83f06ccd-f2fb-468c-8d92-a57a6467dc16",
+      "name": "Split PDF"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"image_url\",\n    \"image_url\": \"data:image/{{ $('Extract Extension').item.json.extension }};base64,{{ $json.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "8c192f75-f298-410e-80d5-ed40ab9359f3",
+      "name": "Mistral OCR img",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        -32
+      ],
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "fl8BbyqzLEROgUBr",
+          "name": "Mistral Cloud account"
+        },
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst file_name = $('Loop Files').first().json.Key\nconst parts = file_name.split(\".\")\nconst ext = parts.pop()\n\nreturn {\n  file_name: parts.join(\".\"),\n  extension: ext\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -112
+      ],
+      "id": "bc9591bf-0707-436d-94c1-8da76d430cbb",
+      "name": "Extract Extension"
     }
   ],
   "pinData": {},
@@ -841,40 +922,7 @@
       "main": [
         [
           {
-            "node": "Mistral OCR",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mistral OCR": {
-      "main": [
-        [
-          {
-            "node": "Extract OCR Text",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract OCR Text": {
-      "main": [
-        [
-          {
-            "node": "Set OCR Tmp Key",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Set OCR Tmp Key": {
-      "main": [
-        [
-          {
-            "node": "Upload OCR Tmp",
+            "node": "Extract from File",
             "type": "main",
             "index": 0
           }
@@ -1093,6 +1141,79 @@
           }
         ]
       ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Extract Extension",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Upload OCR Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR pdf": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split PDF": {
+      "main": [
+        [
+          {
+            "node": "Mistral OCR pdf",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mistral OCR img",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR img": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Extension": {
+      "main": [
+        [
+          {
+            "node": "Split PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -1101,7 +1222,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "98c68f51-de65-4072-bc0a-2b86ba588f00",
+  "versionId": "9dcf651d-8b44-4da9-a042-b0d3c7744006",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "cba6b4c72fd944789eb0cad4cf54875b1c070529873a62c88ef993af0f319d65"
