@@ -1,0 +1,1019 @@
+{
+  "name": "ocr_pipeline_s3_state",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "ce96fcac-e2cf-4c3b-80c3-54d002ccee49",
+      "name": "Every 5 Mins",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1584,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
+        "options": {}
+      },
+      "id": "f691cb4b-b811-461e-b1d7-0d5779c0903f",
+      "name": "S3 List Files",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -1376,
+        256
+      ],
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": "=1",
+        "options": {}
+      },
+      "id": "ca506669-8441-4cae-a8c6-190f47e8d277",
+      "name": "Loop Files",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1184,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get file path from S3 list\nconst filePath = $input.first().json.Key\n\nconst parts = filePath.split(\".\")\nconst bucket = $env.S3_BUCKET_NAME\nconst extension = parts.pop()\nconst key = parts.join(\".\")\nconst metadataPath = `meta/${key}.json`;\n\nreturn {\n  key,\n  bucket,\n  extension,\n  filePath,\n  metadataPath,\n};"
+      },
+      "id": "0bf86018-7057-4dd9-8fa4-ad1a17f86e8a",
+      "name": "Prepare Metadata Path",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -992,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "bucketName": "={{ $json.bucket }}",
+        "fileKey": "={{ $json.metadataPath }}"
+      },
+      "id": "1505c7bc-0e25-4efb-b7b0-5445a967e774",
+      "name": "Get Metadata (If Exists)",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -800,
+        272
+      ],
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "PENDING_OCR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ba104f05-6758-4705-9815-a2e1c627a8d0"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pending OCR"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "PENDING_TRANSLATION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "f77bd224-e132-4b3c-bddd-face809208e3"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pending Translation"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "PENDING_CLASSIFICATION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "ac922f74-a043-4635-8230-72519a18e218"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Pending Classification"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.state }}",
+                    "rightValue": "COMPLETED",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "bff6a24d-5b5d-455d-960f-b3d60b5bf2a4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Completed "
+            }
+          ]
+        },
+        "options": {
+          "allMatchingOutputs": true
+        }
+      },
+      "id": "dd4adf5b-5ee2-47fd-a2aa-89998e62af4b",
+      "name": "State Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        -144,
+        256
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "bucketName": "={{ $('Prepare Metadata Path').item.json.bucket }}",
+        "fileKey": "={{ $('Prepare Metadata Path').item.json.filePath }}"
+      },
+      "id": "6e39913f-373c-4d2b-a567-4097c83eedfe",
+      "name": "Download File for OCR",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        0,
+        48
+      ],
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function replaceImagesInMarkdown(markdownStr, imagesDict) {\n    let result = markdownStr;\n    for (const [imgName, base64Str] of Object.entries(imagesDict)) {\n        const placeholder = `![${imgName}](${imgName})`;\n        const replacement = `![${imgName}](${base64Str})`;\n        result = result.replace(new RegExp(escapeRegExp(placeholder), 'g'), replacement);\n    }\n    return result;\n}\n\nfunction escapeRegExp(string) {\n    return string.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n}\n\nfunction getCombinedMarkdown(ocrResponse) {\n    const markdowns = [];\n\n    // Extract images from each page\n    for (const page of ocrResponse.pages) {\n        const imageData = {};\n\n        // Build image dictionary for this page\n        if (page.images) {\n            for (const img of page.images) {\n                imageData[img.id] = img.image_base64;\n            }\n        }\n\n        // Replace image placeholders with actual images\n        markdowns.push(replaceImagesInMarkdown(page.markdown, imageData));\n    }\n\n    return markdowns.join('\\n\\n');\n}\n\nconst pages = $input.first()?.json?.pages || []\nconst markdown = pages.reduce(\n  (accumulator, page) => [accumulator, page.markdown].join(\"\\n\"), \"\",\n);\n\nconst fullMarkdonw = getCombinedMarkdown($input.first().json)\n\nreturn { \n  markdown,\n  fullMarkdonw,\n  size: $input.first().json.usage_info.doc_size_bytes\n};"
+      },
+      "id": "3829b0f0-f6cd-4eb9-883d-674ac651806f",
+      "name": "Extract OCR Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Update metadata with OCR completion\n\nconst ocrData = $input.first().json;\n\nreturn {\n  state: 'PENDING_TRANSLATION',\n  ocr_completed_at: $now.toString(),\n  text_length: ocrData.size,\n  ocr_markdown: ocrData.markdown,\n  ocr_markdown_full: ocrData.fullMarkdonw\n};"
+      },
+      "id": "69795129-a4db-4f96-97b1-964ce1b48062",
+      "name": "Update Metadata - OCR Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $('Prepare Metadata Path').item.json.bucket }}",
+        "fileName": "={{ $('Prepare Metadata Path').item.json.metadataPath }}",
+        "binaryData": false,
+        "fileContent": "={{ JSON. stringify($json) }}",
+        "additionalFields": {}
+      },
+      "id": "0ff2687b-742d-4c65-8715-b8eb224ef5cf",
+      "name": "Save Metadata to S3",
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -304
+      ],
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract classification from Bedrock response\nconst choices = $input.first().json.choices\nconst response = JSON.parse(choices[0].message.content)\nreturn {\n  ...response\n}"
+      },
+      "id": "a0406b44-cfa9-45d9-8ad0-ef1132bbb9d8",
+      "name": "Extract Classification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1024,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const state = $('Prepare State').first().json\n\nstate.state = 'COMPLETED'\nstate.classifications = JSON.stringify($input.first().json.tags)\n\nreturn {\n  ...state\n};"
+      },
+      "id": "9dd4b389-d06b-43fe-b707-ae6c3515c7cb",
+      "name": "Update Metadata - Classification Done",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7af2b619-f9b0-4c52-a4c0-a832039f0cc7",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "The resource you are requesting could not be found",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -640,
+        272
+      ],
+      "id": "cbd195e4-d697-4955-86b7-4706e0d33db0",
+      "name": "Meta Not exists"
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucketName": "={{ $('Prepare Metadata Path').item.json.bucket }}",
+        "fileName": "={{ $('Prepare Metadata Path').item.json.metadataPath }}",
+        "binaryData": false,
+        "fileContent": "={{ JSON. stringify($json) }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        96
+      ],
+      "id": "3d436dbe-bd86-4d28-abc3-7acff1ed1296",
+      "name": "Upload a file",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "fromJson",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        -448,
+        400
+      ],
+      "id": "e464e128-c3cc-49ac-9586-e8ae678a70c9",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "destinationKey": "base64string",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        160,
+        48
+      ],
+      "id": "d25474ca-af39-43ef-beac-59722279a005",
+      "name": "Extract from File1"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3368e5e5-e003-4f55-9aa9-2575bd99e1de",
+              "leftValue": "={{ $('Prepare Metadata Path').item.json.extension }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        304,
+        48
+      ],
+      "id": "ec42317f-882b-4031-969a-decc1376a359",
+      "name": "is PDF"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"document_url\",\n    \"document_url\": \"data:application/pdf;base64,{{ $json.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "a0fea2ce-ca85-42b5-9610-77b78c53c9e8",
+      "name": "Mistral OCR PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        -96
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"image_url\",\n    \"image_url\": \"data:image/{{ $('Prepare Metadata Path').item.json.extension }};base64,{{ $binary.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "76578cdc-92ae-49cf-8c65-77d22cfd2502",
+      "name": "Mistral OCR IMG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        96
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"detect the language of the document:\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($json.ocr_markdown.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n')) }}\n    }\n  ],\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"language\",\n      \"schema\": {\n        \"title\": \"Generated schema for Root\",\n        \"type\": \"object\",\n        \"properties\": {\n          \"language\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"language\"\n        ]\n      }\n    }\n  },\n  \"model\": \"mistral-large-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "549eed2a-bf5d-41d8-86af-66c217125874",
+      "name": "Mistral TANSLATE Detect Language",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        144,
+        272
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json?.data || $input.first().json\nreturn {\n  ...data\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        288
+      ],
+      "id": "472d5b6b-10e9-4d32-8149-ee762e21d812",
+      "name": "Prepare State"
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  state: 'PENDING_OCR'\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -496,
+        96
+      ],
+      "id": "05a0b010-bba6-416b-bc86-eea919daa7c5",
+      "name": "Init STATE"
+    },
+    {
+      "parameters": {
+        "jsCode": "const choices = $input.first().json.choices\nconst response = JSON.parse(choices[0].message.content)\nreturn {\n  ...response\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        272
+      ],
+      "id": "749950bd-4dc0-494a-a69b-58ba7d147b68",
+      "name": "Extract langauge info"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9f253d54-df05-4a8a-a836-fbc7ac569ce1",
+              "leftValue": "={{ $json.language }}",
+              "rightValue": "en",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        544,
+        272
+      ],
+      "id": "74be213d-8d31-4d5f-aee0-fd187edbeffe",
+      "name": "CHecl Language"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"translate the document to english:\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($('Prepare State').item.json.ocr_markdown.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n')) }}\n    }\n  ],\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"translation\",\n      \"schema\": {\n        \"title\": \"Generated schema for Root\",\n        \"type\": \"object\",\n        \"properties\": {\n          \"document\": {\n            \"type\": \"string\"\n          }\n        },\n        \"required\": [\n          \"document\"\n        ]\n      }\n    }\n  },\n  \"model\": \"mistral-large-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "cfbdef42-905f-4695-9098-fcf387c514bf",
+      "name": "Mistral TANSLATE Translate To Englsih",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        288
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const choices = $input.first().json.choices\nconst response = JSON.parse(choices[0].message.content)\nreturn {\n  ...response\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        288
+      ],
+      "id": "9f7c1ccd-8278-4c49-b8dc-ba638ecc1455",
+      "name": "Extract translation"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Update metadata with OCR completion\n\nconst state = $('Prepare State').first().json\n\nstate.state = 'PENDING_CLASSIFICATION'\nstate.translated_markdown = $input.first().json.document\n\nreturn {\n  ...state\n};"
+      },
+      "id": "c6ddfd60-3f2b-4241-a40d-441085143da7",
+      "name": "Update Metadata - OCR Done1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1216,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n    \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"classify the contents in category and subcategory:\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{ JSON.stringify($('Prepare State').item.json.ocr_markdown.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n')) }}\n    }\n  ],\n  \"response_format\": {\n    \"type\": \"json_schema\",\n    \"json_schema\": {\n      \"name\": \"classification\",\n      \"schema\": {\n        \"title\": \"Generated schema for Root\",\n        \"type\": \"object\",\n        \"properties\": {\n          \"tags\": {\n            \"type\": \"array\"\n          }\n        },\n        \"required\": [\n          \"tags\"\n        ]\n      }\n    }\n  },\n  \"model\": \"mistral-large-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "071207bb-2548-4e5e-83b1-f00e3c9b755c",
+      "name": "Mistral TANSLATE Translate To Englsih1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        352,
+        480
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 5 Mins": {
+      "main": [
+        [
+          {
+            "node": "S3 List Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "S3 List Files": {
+      "main": [
+        [
+          {
+            "node": "Loop Files",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Files": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare Metadata Path",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Metadata Path": {
+      "main": [
+        [
+          {
+            "node": "Get Metadata (If Exists)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Metadata (If Exists)": {
+      "main": [
+        [
+          {
+            "node": "Meta Not exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "State Router": {
+      "main": [
+        [
+          {
+            "node": "Download File for OCR",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mistral TANSLATE Detect Language",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mistral TANSLATE Translate To Englsih1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Download File for OCR": {
+      "main": [
+        [
+          {
+            "node": "Extract from File1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract OCR Text": {
+      "main": [
+        [
+          {
+            "node": "Update Metadata - OCR Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Metadata - OCR Done": {
+      "main": [
+        [
+          {
+            "node": "Save Metadata to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Classification": {
+      "main": [
+        [
+          {
+            "node": "Update Metadata - Classification Done",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Metadata - Classification Done": {
+      "main": [
+        [
+          {
+            "node": "Save Metadata to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Meta Not exists": {
+      "main": [
+        [
+          {
+            "node": "Init STATE",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload a file": {
+      "main": [
+        [
+          {
+            "node": "Prepare State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Prepare State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File1": {
+      "main": [
+        [
+          {
+            "node": "is PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "is PDF": {
+      "main": [
+        [
+          {
+            "node": "Mistral OCR PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mistral OCR IMG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR IMG": {
+      "main": [
+        [
+          {
+            "node": "Extract OCR Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Metadata to S3": {
+      "main": [
+        [
+          {
+            "node": "Get Metadata (If Exists)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral TANSLATE Detect Language": {
+      "main": [
+        [
+          {
+            "node": "Extract langauge info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare State": {
+      "main": [
+        [
+          {
+            "node": "State Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init STATE": {
+      "main": [
+        [
+          {
+            "node": "Upload a file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract langauge info": {
+      "main": [
+        [
+          {
+            "node": "CHecl Language",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CHecl Language": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Mistral TANSLATE Translate To Englsih",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral TANSLATE Translate To Englsih": {
+      "main": [
+        [
+          {
+            "node": "Extract translation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract translation": {
+      "main": [
+        [
+          {
+            "node": "Update Metadata - OCR Done1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Metadata - OCR Done1": {
+      "main": [
+        [
+          {
+            "node": "Save Metadata to S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral TANSLATE Translate To Englsih1": {
+      "main": [
+        [
+          {
+            "node": "Extract Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "f04fb683-16fb-45d9-a57d-be0f3f33d9f7",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cba6b4c72fd944789eb0cad4cf54875b1c070529873a62c88ef993af0f319d65"
+  },
+  "id": "peieHAFSbxHRCU8F",
+  "tags": []
+}

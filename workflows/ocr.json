@@ -1,175 +1,177 @@
 {
-  "meta": {
-    "instanceId": "ocr_pipeline"
-  },
+  "name": "ocr_pipeline2",
   "nodes": [
     {
       "parameters": {
         "rule": {
           "interval": [
             {
-              "field": "minutes",
-              "minutes": 5
+              "field": "minutes"
             }
           ]
         }
       },
-      "id": "trigger-node",
+      "id": "d5d7b1ef-5f53-42bc-8c51-7613ccf010eb",
       "name": "Every 5 Mins",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.1,
-      "position": [0, 300]
+      "position": [
+        -1280,
+        304
+      ]
     },
     {
       "parameters": {
-        "operation": "getMany",
-        "bucketName": "={{ $env.S3_INPUT_BUCKET || $env.S3_BUCKET_NAME }}",
-        "returnAll": false,
-        "limit": 100,
-        "options": {
-          "prefix": "={{ $env.S3_INPUT_PREFIX || '' }}"
-        }
+        "operation": "getAll",
+        "bucketName": "n8nbaseinfrastructure-docprocessingbucketab4370d9-fqqw9dgozz3s",
+        "options": {}
       },
-      "id": "s3-list",
+      "id": "5f9b1af2-6546-4518-b8f9-2b92e15242b1",
       "name": "S3 List Files",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [200, 300],
+      "position": [
+        -1072,
+        304
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
-        "batchSize": "={{ parseInt($env.BATCH_SIZE) || 5 }}",
+        "batchSize": "=1",
         "options": {}
       },
-      "id": "loop-files",
+      "id": "36f1b340-1458-4e19-b267-62f6906c39cc",
       "name": "Loop Files",
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
-      "position": [400, 300]
+      "position": [
+        -880,
+        304
+      ]
     },
     {
       "parameters": {
-        "operation": "invoke",
-        "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
-        "payload": "json",
-        "payloadJson": "={\n  \"operation\": \"GET\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\"\n}",
-        "options": {}
-      },
-      "id": "lambda-get-state",
-      "name": "Get State from Lambda",
-      "type": "n8n-nodes-base.awsLambda",
-      "typeVersion": 1,
-      "position": [600, 300],
-      "credentials": {
-        "aws": {
-          "id": "AWS_CREDENTIAL_ID",
-          "name": "AWS"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "rules",
         "rules": {
           "values": [
             {
-              "id": "rule_is_new",
-              "name": "Is New or Empty",
-              "rule": {
-                "parameters": [
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
                   {
-                    "id": "cond_empty",
-                    "name": "State is Empty",
+                    "id": "84139fe5-6e5c-4965-ba27-7fb0ec57f637",
+                    "leftValue": "={{ $json.result.body.exists }}",
+                    "rightValue": false,
                     "operator": {
-                      "type": "string",
-                      "operation": "isEmpty"
-                    },
-                    "value": "={{ $json.body.state }}"
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
                   }
-                ]
-              },
-              "output": 0
+                ],
+                "combinator": "and"
+              }
             },
             {
-              "id": "rule_pending_ocr",
-              "name": "Pending OCR",
-              "rule": {
-                "parameters": [
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
                   {
-                    "id": "cond_ocr",
-                    "name": "State matches OCR",
+                    "id": "59465993-4ceb-437f-acdf-e0ec6451d8d2",
+                    "leftValue": "={{ $json.result.body.state }}",
+                    "rightValue": "PENDING_OCR",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
-                      "value": "PENDING_OCR"
-                    },
-                    "value": "={{ $json.body.state }}"
+                      "name": "filter.operator.equals"
+                    }
                   }
-                ]
-              },
-              "output": 0
+                ],
+                "combinator": "and"
+              }
             },
             {
-              "id": "rule_pending_classification",
-              "name": "Pending Classification",
-              "rule": {
-                "parameters": [
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
                   {
-                    "id": "cond_classification",
-                    "name": "State matches Classification",
+                    "id": "77290758-e76a-42f2-b098-1c6bd4ba92d2",
+                    "leftValue": "={{ $json.result.body.state }}",
+                    "rightValue": "PENDING_TRANSLATION",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
-                      "value": "PENDING_CLASSIFICATION"
-                    },
-                    "value": "={{ $json.body.state }}"
+                      "name": "filter.operator.equals"
+                    }
                   }
-                ]
-              },
-              "output": 0
+                ],
+                "combinator": "and"
+              }
             },
             {
-              "id": "rule_pending_translation",
-              "name": "Pending Translation",
-              "rule": {
-                "parameters": [
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
                   {
-                    "id": "cond_trans",
-                    "name": "State matches Translation",
+                    "id": "7ece52ef-b34a-4284-b0bc-a939f5814016",
+                    "leftValue": "={{ $json.result.body.state }}",
+                    "rightValue": "PENDING_CLASSIFICATION",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
-                      "value": "PENDING_TRANSLATION"
-                    },
-                    "value": "={{ $json.body.state }}"
+                      "name": "filter.operator.equals"
+                    }
                   }
-                ]
-              },
-              "output": 1
+                ],
+                "combinator": "and"
+              }
             },
             {
-              "id": "rule_completed",
-              "name": "Completed (Skip)",
-              "rule": {
-                "parameters": [
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
                   {
-                    "id": "cond_completed",
-                    "name": "State is Completed",
+                    "id": "847ff0c7-40fc-4d68-a15a-d7384bace5a7",
+                    "leftValue": "={{ $json.result.body.state }}",
+                    "rightValue": "COMPLETED",
                     "operator": {
                       "type": "string",
                       "operation": "equals",
-                      "value": "COMPLETED"
-                    },
-                    "value": "={{ $json.body.state }}"
+                      "name": "filter.operator.equals"
+                    }
                   }
-                ]
-              },
-              "output": 2
+                ],
+                "combinator": "and"
+              }
             }
           ]
         },
@@ -177,66 +179,42 @@
           "fallbackOutput": 3
         }
       },
-      "id": "state-router",
+      "id": "5d089d21-d32c-455c-b0b5-f874c8749cf7",
       "name": "State Router",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3,
-      "position": [800, 300],
+      "position": [
+        -320,
+        208
+      ],
       "notes": "Output 0: Needs OCR/Classification\nOutput 1: Needs Translation\nOutput 2: Completed (Skip)\nOutput 3: Error/Unknown State"
     },
     {
       "parameters": {
-        "operation": "download",
-        "bucketName": "={{ $env.S3_INPUT_BUCKET }}",
-        "fileKey": "={{ $('Loop Files').item.json.Key }}",
-        "options": {}
+        "bucketName": "=n8nbaseinfrastructure-docprocessingbucketab4370d9-fqqw9dgozz3s",
+        "fileKey": "={{ $json.result.body.file_name }}"
       },
-      "id": "s3-download",
+      "id": "8866ac3c-22a8-4a8f-b97a-056b42339460",
       "name": "S3 Download File",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [1000, 100],
+      "position": [
+        0,
+        -112
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "url": "https://api.mistral.ai/v1/chat/completions",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"{{ $env.MISTRAL_MODEL || 'pixtral-12b-2409' }}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Extract all text from this image. Return ONLY the raw text, no formatting or explanations.\"\n        },\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $json.mimeType }};base64,{{ $binary.data.data }}\"\n          }\n        }\n      ]\n    }\n  ],\n  \"temperature\": 0,\n  \"max_tokens\": {{ parseInt($env.MISTRAL_MAX_TOKENS) || 4096 }}\n}",
-        "options": {
-          "timeout": 60000,
-          "retry": {
-            "enabled": true,
-            "maxRetries": 3,
-            "waitBetweenRetries": 1000
-          }
-        }
-      },
-      "id": "mistral-ocr",
-      "name": "Mistral OCR",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1200, 100],
-      "credentials": {
-        "httpHeaderAuth": {
-          "name": "Mistral API"
-        }
-      },
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
+        "method": "POST",
+        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "aws",
-        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
-        "method": "POST",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a professional translator.\\n1. Check the language of the input.\\n2. If it is NOT {{ $env.TARGET_LANGUAGE || 'German' }}, translate it to {{ $env.TARGET_LANGUAGE || 'German' }}.\\n3. If it IS {{ $env.TARGET_LANGUAGE || 'German' }}, output it as-is.\\n4. Output ONLY the final text.\\n\\nInput:\\n{{ $json.content }}\"\n    }\n  ],\n  \"max_tokens\": 4096,\n  \"temperature\": 0.1\n}",
@@ -244,14 +222,18 @@
           "timeout": 60000
         }
       },
-      "id": "bedrock-translate",
+      "id": "611148f7-19a7-470b-be95-7761fe365f39",
       "name": "Bedrock Translate",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1400, 300],
+      "position": [
+        496,
+        224
+      ],
       "credentials": {
         "aws": {
-          "name": "AWS"
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       },
       "continueOnFail": true
@@ -270,80 +252,45 @@
         },
         "options": {}
       },
-      "id": "extract-translation-response",
+      "id": "a8b66ca3-c461-4dd2-a3d2-249661821f26",
       "name": "Extract Translation Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1600, 300]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "extract-text",
-              "name": "content",
-              "value": "={{ $json.choices?.[0]?.message?.content || '' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "extract-ocr-text",
-      "name": "Extract OCR Text",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [1400, 100]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "ocr-tmp-key",
-              "name": "ocrTmpKey",
-              "value": "={{ 'tmp/ocr/' + $now.toUnix() + '-' + $('Loop Files').item.json.Key.split('/').pop() + '.txt' }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "set-ocr-tmp-key",
-      "name": "Set OCR Tmp Key",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [1600, 0]
+      "position": [
+        688,
+        224
+      ]
     },
     {
       "parameters": {
         "operation": "upload",
-        "bucketName": "={{ $env.S3_BUCKET_NAME }}",
-        "fileName": "={{ $json.ocrTmpKey }}",
-        "fileContent": "={{ $('Extract OCR Text').item.json.content }}",
-        "options": {
-          "contentType": "text/plain",
-          "prefix": "tmp"
-        }
+        "bucketName": "=n8nbaseinfrastructure-docprocessingbucketab4370d9-fqqw9dgozz3s",
+        "fileName": "={{ $json.file }}",
+        "binaryData": false,
+        "fileContent": "={{ $json.markdown }}",
+        "additionalFields": {}
       },
-      "id": "s3-upload-ocr-tmp",
+      "id": "fecfea09-37cf-431e-b5d6-151d7cfb2d20",
       "name": "Upload OCR Tmp",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [1800, 0],
+      "position": [
+        1088,
+        -144
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "aws",
-        "url": "=https://bedrock-runtime.{{ $env.AWS_REGION || 'us-east-1' }}.amazonaws.com/model/{{ $env.BEDROCK_MODEL || 'mistral.mistral-large-2402-v1:0' }}/invoke",
-        "method": "POST",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"You are a document classifier. Analyze the following text and classify it into a category and subcategory.\\n\\nReturn ONLY a JSON object with this exact structure:\\n{\\n  \\\"category\\\": \\\"<main category>\\\",\\n  \\\"subcategory\\\": \\\"<specific subcategory>\\\"\\n}\\n\\nUse clear, filesystem-safe names (lowercase, hyphens instead of spaces).\\n\\nText to classify:\\n{{ $json.content }}\"\n    }\n  ],\n  \"max_tokens\": 1024,\n  \"temperature\": 0\n}",
@@ -351,16 +298,14 @@
           "timeout": 60000
         }
       },
-      "id": "bedrock-classify",
+      "id": "48df9231-4437-4076-8811-eb7a97864b3d",
       "name": "Bedrock Classify",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1800, 100],
-      "credentials": {
-        "aws": {
-          "name": "AWS"
-        }
-      },
+      "position": [
+        480,
+        448
+      ],
       "continueOnFail": true
     },
     {
@@ -377,11 +322,14 @@
         },
         "options": {}
       },
-      "id": "extract-classify-response",
+      "id": "b4aaf817-b858-4bd2-ba4b-57d7ed5226bd",
       "name": "Extract Classify Response",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [2000, 0]
+      "position": [
+        640,
+        448
+      ]
     },
     {
       "parameters": {
@@ -409,11 +357,14 @@
         },
         "options": {}
       },
-      "id": "extract-classification",
+      "id": "a5e4bf5b-5657-4a51-8add-0fb139c2b401",
       "name": "Extract Classification",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [2000, 100]
+      "position": [
+        816,
+        448
+      ]
     },
     {
       "parameters": {
@@ -429,30 +380,34 @@
         },
         "options": {}
       },
-      "id": "set-classification-tmp-key",
+      "id": "4045a169-353c-4b33-9fd3-21f87b3571b2",
       "name": "Set Classification Tmp Key",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [2200, 0]
+      "position": [
+        992,
+        448
+      ]
     },
     {
       "parameters": {
         "operation": "upload",
         "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
         "fileName": "={{ $json.classificationTmpKey }}",
-        "fileContent": "={{ $('Extract Classify Response').item.json.content || '' }}",
-        "options": {
-          "contentType": "application/json"
-        }
+        "additionalFields": {}
       },
-      "id": "s3-upload-classification-tmp",
+      "id": "dab3a4fe-4113-403a-97c0-2be0a3066140",
       "name": "Upload Classification Tmp",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [2400, 0],
+      "position": [
+        1168,
+        448
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
@@ -470,30 +425,34 @@
         },
         "options": {}
       },
-      "id": "set-translation-tmp-key",
+      "id": "7ba2a9a1-24ed-4793-a1e0-019588ff3f40",
       "name": "Set Translation Tmp Key",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [2400, 300]
+      "position": [
+        880,
+        224
+      ]
     },
     {
       "parameters": {
         "operation": "upload",
         "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
         "fileName": "={{ $json.translationTmpKey }}",
-        "fileContent": "={{ $json.content || $json.data }}",
-        "options": {
-          "contentType": "text/plain"
-        }
+        "additionalFields": {}
       },
-      "id": "s3-upload-translation-tmp",
+      "id": "cbc87c0d-6478-4af1-b4e4-031286af4667",
       "name": "Upload Translation Tmp",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [2600, 300],
+      "position": [
+        1072,
+        224
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
@@ -523,27 +482,32 @@
         },
         "options": {}
       },
-      "id": "load-state-metadata",
+      "id": "2fdf48b5-aca5-4841-ba5f-9ff199ac52a9",
       "name": "Load State Metadata",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1000, 500]
+      "position": [
+        -16,
+        224
+      ]
     },
     {
       "parameters": {
-        "operation": "download",
         "bucketName": "={{ $env.S3_TMP_BUCKET_NAME || $env.S3_BUCKET_NAME }}",
-        "fileKey": "={{ $json.ocrTmpKey }}",
-        "options": {}
+        "fileKey": "={{ $json.ocrTmpKey }}"
       },
-      "id": "s3-download-ocr-tmp",
+      "id": "1a6260dc-6531-4dbf-b3d6-52175416257c",
       "name": "Download OCR Tmp",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [1200, 500],
+      "position": [
+        144,
+        224
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
     },
@@ -573,153 +537,320 @@
         },
         "options": {}
       },
-      "id": "prepare-translation-input-resume",
+      "id": "6da4b3d7-4b1e-4647-9442-2bbdc4d609d3",
       "name": "Prepare Translation Input (Resume)",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [1400, 500]
-    },
-    {
-      "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "translation-input",
-              "name": "content",
-              "value": "={{ $('Extract OCR Text').item.json.content }}",
-              "type": "string"
-            },
-            {
-              "id": "translation-category",
-              "name": "category",
-              "value": "={{ $('Extract Classification').item.json.category }}",
-              "type": "string"
-            },
-            {
-              "id": "translation-subcategory",
-              "name": "subcategory",
-              "value": "={{ $('Extract Classification').item.json.subcategory }}",
-              "type": "string"
-            },
-            {
-              "id": "translation-ocr-tmp",
-              "name": "ocrTmpKey",
-              "value": "={{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "prepare-translation-input",
-      "name": "Prepare Translation Input",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [2400, 100]
-    },
-    {
-      "parameters": {
-        "operation": "invoke",
-        "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
-        "payload": "json",
-        "payloadJson": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_CLASSIFICATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": {{ $('Extract OCR Text').item.json.content.length }},\n    \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"\n  }\n}",
-        "options": {}
-      },
-      "id": "lambda-update-after-ocr",
-      "name": "Update State: OCR Done",
-      "type": "n8n-nodes-base.awsLambda",
-      "typeVersion": 1,
-      "position": [2000, 0],
-      "credentials": {
-        "aws": {
-          "id": "AWS_CREDENTIAL_ID",
-          "name": "AWS"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "invoke",
-        "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
-        "payload": "json",
-        "payloadJson": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"classification_completed_at\": \"{{ $now.toISO() }}\",\n    \"category\": \"{{ $('Extract Classification').item.json.category }}\",\n    \"subcategory\": \"{{ $('Extract Classification').item.json.subcategory }}\",\n    \"classification_tmp_path\": \"{{ $('Set Classification Tmp Key').item.json.classificationTmpKey }}\",\n    \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"\n  }\n}",
-        "options": {}
-      },
-      "id": "lambda-update-after-classification",
-      "name": "Update State: Classification Done",
-      "type": "n8n-nodes-base.awsLambda",
-      "typeVersion": 1,
-      "position": [2600, 100],
-      "credentials": {
-        "aws": {
-          "id": "AWS_CREDENTIAL_ID",
-          "name": "AWS"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "invoke",
-        "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
-        "payload": "json",
-        "payloadJson": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"COMPLETED\",\n  \"metadata\": {\n    \"translation_completed_at\": \"{{ $now.toISO() }}\",\n    \"final_text_length\": {{ ($json.content || $json.data || '').length }},\n    \"translation_tmp_path\": \"{{ $('Set Translation Tmp Key').item.json.translationTmpKey }}\",\n    \"output_path\": \"{{ ($json.category || $('Load State Metadata').item.json.category || $('Extract Classification').item.json.category) }}/{{ ($json.subcategory || $('Load State Metadata').item.json.subcategory || $('Extract Classification').item.json.subcategory) }}/{{ $('Loop Files').item.json.Key.split('/').pop() }}\"\n  }\n}",
-        "options": {}
-      },
-      "id": "lambda-update-complete",
-      "name": "Update State: Completed",
-      "type": "n8n-nodes-base.awsLambda",
-      "typeVersion": 1,
-      "position": [3000, 300],
-      "credentials": {
-        "aws": {
-          "id": "AWS_CREDENTIAL_ID",
-          "name": "AWS"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "invoke",
-        "functionName": "={{ $env.LAMBDA_STATE_MANAGER_NAME || 'n8n-doc-pipeline-state-manager' }}",
-        "payload": "json",
-        "payloadJson": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_OCR\",\n  \"metadata\": {\n    \"discovered_at\": \"{{ $now.toISO() }}\",\n    \"file_size\": {{ $('Loop Files').item.json.Size || 0 }}\n  }\n}",
-        "options": {}
-      },
-      "id": "lambda-mark-new",
-      "name": "Mark as New File",
-      "type": "n8n-nodes-base.awsLambda",
-      "typeVersion": 1,
-      "position": [1000, 0],
-      "credentials": {
-        "aws": {
-          "id": "AWS_CREDENTIAL_ID",
-          "name": "AWS"
-        }
-      }
+      "position": [
+        320,
+        224
+      ]
     },
     {
       "parameters": {
         "operation": "upload",
         "bucketName": "={{ $env.S3_BUCKET_NAME }}",
         "fileName": "={{ ($json.category || $('Load State Metadata').item.json.category || $('Extract Classification').item.json.category) }}/{{ ($json.subcategory || $('Load State Metadata').item.json.subcategory || $('Extract Classification').item.json.subcategory) }}/{{ $('Loop Files').item.json.Key.split('/').pop().replace(/\\.[^.]+$/, '.txt') }}",
-        "fileContent": "={{ $('Extract Translation Response').item.json.content || '' }}",
-        "options": {
-          "contentType": "text/plain; charset=utf-8",
-            "prefix": "outputs"
-        }
+        "additionalFields": {}
       },
-      "id": "s3-upload-result",
+      "id": "99d2efca-ae7f-4635-b915-4741a27863d6",
       "name": "S3 Upload Result",
       "type": "n8n-nodes-base.awsS3",
       "typeVersion": 2,
-      "position": [2800, 300],
+      "position": [
+        1600,
+        448
+      ],
       "credentials": {
-        "awsS3Api": {
-          "name": "AWS S3"
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
         }
       }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6fa7b616-d583-4408-bdf1-0517776f7b50",
+              "name": "result.body",
+              "value": "={{ $json.result.body }}",
+              "type": "object"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -496,
+        320
+      ],
+      "id": "5eff658a-4e89-4de2-ba44-4d021b245b39",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
+        "payload": "={\n  \"operation\": \"GET\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\"\n}"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        -656,
+        320
+      ],
+      "id": "81c0621a-4cb8-4c3c-b8dc-3d7cd9e9cbee",
+      "name": "Check FIle",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
+        "payload": "={\n  \"operation\": \"UPDATE\",\n  \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",\n  \"new_state\": \"PENDING_TRANSLATION\",\n  \"metadata\": {\n    \"ocr_completed_at\": \"{{ $now.toISO() }}\",\n    \"text_length\": \"{{ $('Mistral OCR pdf').item.json.usage_info.doc_size_bytes }}\",\n    \"ocr_tmp_path\": \"{{ $('Code in JavaScript').item.json.file }}\"\n  }\n}"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        1264,
+        -144
+      ],
+      "id": "188b8570-909f-453c-98fe-df7cb1f9f14e",
+      "name": "Mark OCR done",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
+        "payload": "={   \"operation\": \"UPDATE\",   \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",   \"new_state\": \"PENDING_CLASSIFICATION\",   \"metadata\": {     \"ocr_completed_at\": \"{{ $now.toISO() }}\",     \"text_length\": {{ $('Extract OCR Text').item.json.content.length }},     \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"   } }"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        1296,
+        224
+      ],
+      "id": "f9372fb9-212e-47ca-a468-135f5ab984b8",
+      "name": "Mark Translation done",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
+        "payload": "={   \"operation\": \"UPDATE\",   \"file_name\": \"{{ $('Loop Files').item.json.Key }}\",   \"new_state\": \"COMPETED\",   \"metadata\": {     \"ocr_completed_at\": \"{{ $now.toISO() }}\",     \"text_length\": {{ $('Extract OCR Text').item.json.content.length }},     \"ocr_tmp_path\": \"{{ $('Set OCR Tmp Key').item.json.ocrTmpKey }}\"   } }"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        1376,
+        448
+      ],
+      "id": "4324b806-8760-40a6-b089-22d594de4b44",
+      "name": "Mark Classification done",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.awsS3",
+      "typeVersion": 2,
+      "position": [
+        144,
+        464
+      ],
+      "id": "297d4984-7ea2-4f47-87a8-e6fc3a341ce0",
+      "name": "Download Tanslation TMP",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "function": "arn:aws:lambda:eu-west-1:137766295738:function:n8n-doc-pipeline-state-manager",
+        "payload": "={   \"operation\": \"UPDATE\",   \"file_name\": \"{{ $json.result.body.file_name }}\",   \"new_state\": \"PENDING_OCR\",   \"metadata\": {     \"discovered_at\": \"{{ $now.toISO() }}\"  } }"
+      },
+      "type": "n8n-nodes-base.awsLambda",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        -112
+      ],
+      "id": "0fc55429-bde0-4ca6-a97a-91a8adb781dd",
+      "name": "AWS Lambda",
+      "credentials": {
+        "aws": {
+          "id": "LjjYP1ux893BlJof",
+          "name": "AWS (IAM) account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "binaryToPropery",
+        "destinationKey": "base64string",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        192,
+        -112
+      ],
+      "id": "23a8afac-0fa3-430c-a117-6e4cd8ab742a",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst pages = $input.first()?.json?.pages || []\nconst markdown = pages.reduce(\n  (accumulator, page) => [accumulator, page.markdown].join(\"\\n\"), \"\",\n);\n\nconst file_name =  $('Loop Files').first().json.Key\nreturn { \n  markdown: markdown,\n  file: `tmp/ocr/${$now.toString()}/${file_name}.md`,\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        -144
+      ],
+      "id": "d37cdc34-7eea-45d5-9859-c831781ba47e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"document_url\",\n    \"document_url\": \"data:application/pdf;base64,{{ $json.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "faf11744-603f-4226-b76e-bfb82da9afac",
+      "name": "Mistral OCR pdf",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        -208
+      ],
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "fl8BbyqzLEROgUBr",
+          "name": "Mistral Cloud account"
+        },
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5da00862-d9df-412e-890a-1dd603913af2",
+              "leftValue": "={{ $json.extension }}",
+              "rightValue": "pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": "={{ false }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        528,
+        -112
+      ],
+      "id": "83f06ccd-f2fb-468c-8d92-a57a6467dc16",
+      "name": "Split PDF"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.mistral.ai/v1/ocr",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"document\": {\n    \"type\": \"image_url\",\n    \"image_url\": \"data:image/{{ $('Extract Extension').item.json.extension }};base64,{{ $json.base64string }}\"\n  },\n  \"model\": \"mistral-ocr-latest\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "8c192f75-f298-410e-80d5-ed40ab9359f3",
+      "name": "Mistral OCR img",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        736,
+        -32
+      ],
+      "credentials": {
+        "mistralCloudApi": {
+          "id": "fl8BbyqzLEROgUBr",
+          "name": "Mistral Cloud account"
+        },
+        "httpBearerAuth": {
+          "id": "U6pdFsT2lcRdY8rW",
+          "name": "Bearer Auth account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nconst file_name = $('Loop Files').first().json.Key\nconst parts = file_name.split(\".\")\nconst ext = parts.pop()\n\nreturn {\n  file_name: parts.join(\".\"),\n  extension: ext\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        -112
+      ],
+      "id": "bc9591bf-0707-436d-94c1-8da76d430cbb",
+      "name": "Extract Extension"
     }
   ],
+  "pinData": {},
   "connections": {
     "Every 5 Mins": {
       "main": [
@@ -745,21 +876,10 @@
     },
     "Loop Files": {
       "main": [
+        [],
         [
           {
-            "node": "Get State from Lambda",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "Get State from Lambda": {
-      "main": [
-        [
-          {
-            "node": "State Router",
+            "node": "Check FIle",
             "type": "main",
             "index": 0
           }
@@ -770,7 +890,14 @@
       "main": [
         [
           {
-            "node": "Mark as New File",
+            "node": "AWS Lambda",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "S3 Download File",
             "type": "main",
             "index": 0
           }
@@ -782,15 +909,9 @@
             "index": 0
           }
         ],
-        [],
-        []
-      ]
-    },
-    "Mark as New File": {
-      "main": [
         [
           {
-            "node": "S3 Download File",
+            "node": "Download Tanslation TMP",
             "type": "main",
             "index": 0
           }
@@ -801,40 +922,7 @@
       "main": [
         [
           {
-            "node": "Mistral OCR",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Mistral OCR": {
-      "main": [
-        [
-          {
-            "node": "Extract OCR Text",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Extract OCR Text": {
-      "main": [
-        [
-          {
-            "node": "Set OCR Tmp Key",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Set OCR Tmp Key": {
-      "main": [
-        [
-          {
-            "node": "Upload OCR Tmp",
+            "node": "Extract from File",
             "type": "main",
             "index": 0
           }
@@ -845,18 +933,7 @@
       "main": [
         [
           {
-            "node": "Update State: OCR Done",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update State: OCR Done": {
-      "main": [
-        [
-          {
-            "node": "Bedrock Classify",
+            "node": "Mark OCR done",
             "type": "main",
             "index": 0
           }
@@ -911,29 +988,7 @@
       "main": [
         [
           {
-            "node": "Update State: Classification Done",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update State: Classification Done": {
-      "main": [
-        [
-          {
-            "node": "Prepare Translation Input",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Translation Input": {
-      "main": [
-        [
-          {
-            "node": "Set Translation Tmp Key",
+            "node": "Mark Classification done",
             "type": "main",
             "index": 0
           }
@@ -944,7 +999,7 @@
       "main": [
         [
           {
-            "node": "Set Translation Tmp Key",
+            "node": "Bedrock Translate",
             "type": "main",
             "index": 0
           }
@@ -955,7 +1010,7 @@
       "main": [
         [
           {
-            "node": "Bedrock Translate",
+            "node": "Upload Translation Tmp",
             "type": "main",
             "index": 0
           }
@@ -977,7 +1032,7 @@
       "main": [
         [
           {
-            "node": "Upload Translation Tmp",
+            "node": "Set Translation Tmp Key",
             "type": "main",
             "index": 0
           }
@@ -988,7 +1043,7 @@
       "main": [
         [
           {
-            "node": "S3 Upload Result",
+            "node": "Mark Translation done",
             "type": "main",
             "index": 0
           }
@@ -996,17 +1051,6 @@
       ]
     },
     "S3 Upload Result": {
-      "main": [
-        [
-          {
-            "node": "Update State: Completed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Update State: Completed": {
       "main": [
         []
       ]
@@ -1032,6 +1076,157 @@
           }
         ]
       ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "State Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check FIle": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark OCR done": {
+      "main": [
+        []
+      ]
+    },
+    "Mark Translation done": {
+      "main": [
+        []
+      ]
+    },
+    "Mark Classification done": {
+      "main": [
+        [
+          {
+            "node": "S3 Upload Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Tanslation TMP": {
+      "main": [
+        [
+          {
+            "node": "Bedrock Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AWS Lambda": {
+      "main": [
+        [
+          {
+            "node": "S3 Download File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Extract Extension",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Upload OCR Tmp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR pdf": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split PDF": {
+      "main": [
+        [
+          {
+            "node": "Mistral OCR pdf",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mistral OCR img",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mistral OCR img": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Extension": {
+      "main": [
+        [
+          {
+            "node": "Split PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
-  }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9dcf651d-8b44-4da9-a042-b0d3c7744006",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "cba6b4c72fd944789eb0cad4cf54875b1c070529873a62c88ef993af0f319d65"
+  },
+  "id": "6GDs5-7k6YwYfop-tqsEv",
+  "tags": []
 }

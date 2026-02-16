@@ -148,12 +148,9 @@ export class BaseInfrastructureStack extends cdk.Stack {
       userName: "n8n-bot-user",
     });
 
-    // Give it Admin access to S3, DynamoDB, Bedrock
+    // Give it Admin access to S3 and Bedrock
     this.n8nUser.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonS3FullAccess"),
-    );
-    this.n8nUser.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonDynamoDBFullAccess"),
     );
     this.n8nUser.addManagedPolicy(
       iam.ManagedPolicy.fromAwsManagedPolicyName("AmazonBedrockFullAccess"),
@@ -162,6 +159,7 @@ export class BaseInfrastructureStack extends cdk.Stack {
     // Grant permission to read Mistral API key from Secrets Manager
     this.mistralApiKeySecret.grantRead(this.n8nUser);
 
+    // Generate Access Key
     // Generate Access Key
     const accessKey = new iam.AccessKey(this, "N8nBotKey", {
       user: this.n8nUser,

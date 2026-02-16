@@ -2,7 +2,6 @@
 import 'dotenv/config';
 import * as cdk from 'aws-cdk-lib/core';
 import { BaseInfrastructureStack } from '../lib/base-infrastructure-stack';
-import { StateMachineStack } from '../lib/state-machine-stack';
 import { EcsStack } from '../lib/ecs-stack';
 
 const app = new cdk.App();
@@ -15,11 +14,6 @@ const env = {
 // Deploy stacks in order of dependencies
 const baseStack = new BaseInfrastructureStack(app, 'N8nBaseInfrastructure', { env });
 
-const stateMachineStack = new StateMachineStack(app, 'N8nStateMachine', {
-  env,
-  n8nUser: baseStack.n8nUser,
-});
-
 const ecsStack = new EcsStack(app, 'N8nEcsService', {
   env,
   vpc: baseStack.vpc,
@@ -27,11 +21,9 @@ const ecsStack = new EcsStack(app, 'N8nEcsService', {
   securityGroup: baseStack.securityGroup,
   accessPoint: baseStack.accessPoint,
   docBucket: baseStack.docBucket,
-  table: stateMachineStack.table,
   mistralApiKeySecret: baseStack.mistralApiKeySecret,
   awsAccessKeyIdSecret: baseStack.awsAccessKeyIdSecret,
   awsSecretAccessKeySecret: baseStack.awsSecretAccessKeySecret,
-  stateManagerFunctionName: stateMachineStack.stateManagerFunction.functionName,
   n8nBasicAuthUserSecret: baseStack.n8nBasicAuthUserSecret,
   n8nBasicAuthPasswordSecret: baseStack.n8nBasicAuthPasswordSecret,
 });

@@ -4,7 +4,6 @@ import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as efs from "aws-cdk-lib/aws-efs";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
-import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ecr_assets from "aws-cdk-lib/aws-ecr-assets";
 import * as applicationautoscaling from "aws-cdk-lib/aws-applicationautoscaling";
@@ -18,11 +17,9 @@ export interface EcsStackProps extends cdk.StackProps {
   fileSystem: efs.IFileSystem;
   accessPoint: efs.IAccessPoint;
   docBucket: s3.IBucket;
-  table: dynamodb.ITable;
   mistralApiKeySecret: secretsmanager.ISecret;
   awsAccessKeyIdSecret: secretsmanager.ISecret;
   awsSecretAccessKeySecret: secretsmanager.ISecret;
-  stateManagerFunctionName: string;
   n8nBasicAuthUserSecret: secretsmanager.ISecret;
   n8nBasicAuthPasswordSecret: secretsmanager.ISecret;
 }
@@ -70,7 +67,6 @@ export class EcsStack extends cdk.Stack {
 
     // Grant task permissions
     props.docBucket.grantReadWrite(taskRole);
-    props.table.grantReadWriteData(taskRole);
     taskRole.addToPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -136,8 +132,8 @@ export class EcsStack extends cdk.Stack {
         N8N_PERSONALIZATION_ENABLED: "false",
         N8N_VERSION_NOTIFICATIONS_ENABLED: "false",
         N8N_TEMPLATES_ENABLED: "false",
+        N8N_BLOCK_ENV_ACCESS_IN_NODE: "false",
         S3_BUCKET_NAME: props.docBucket.bucketName,
-        LAMBDA_STATE_MANAGER_NAME: props.stateManagerFunctionName,
         BATCH_SIZE: "1",
         TARGET_LANGUAGE: "English",
         BEDROCK_MODEL: "mistral.mistral-large-2402-v1:0",

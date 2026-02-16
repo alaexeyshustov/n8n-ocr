@@ -42,15 +42,15 @@ AWS Resources:
   - ECR Repository: Custom n8n image with workflows baked in
   - EFS File System: Persistent storage for n8n data
   - S3 Bucket: DocProcessingBucket (with lifecycle rules)
-  - DynamoDB Table: DocPipeline (partition key: file_name)
-  - Lambda Function: State Manager (Python 3.12, manages DynamoDB state)
-    └─ Function URL: HTTPS endpoint with IAM auth
+    ├─ input/: Input files for processing
+    ├─ .meta/: Metadata JSON files tracking state for each file
+    └─ output/: Processed files organized by category/subcategory
   - Secrets Manager: 
     ├─ Mistral API key (n8n/mistral-api-key)
     ├─ Basic Auth Username (n8n/basic-auth-user)
     └─ Basic Auth Password (n8n/basic-auth-password)
   - IAM User: n8n-bot-user (with auto-generated access keys)
-  - IAM Role: Task role with S3, DynamoDB, Bedrock permissions
+  - IAM Role: Task role with S3 and Bedrock permissions
   - Security Group: No default ingress rules (use add-my-ip.sh to add your IP)
 ```
 
@@ -61,9 +61,10 @@ bin/n8n-cdk.ts           # CDK app entry point, stack instantiation
 bin/add-my-ip.sh         # Helper script to add your current IP to security group
 bin/get-n8n-url.sh       # Helper script to find ECS task IP
 lib/n8n-cdk-stack.ts     # Main infrastructure definition (all resources)
-lambda/state-manager.py  # Lambda function for DynamoDB state management
-lambda/README.md         # Lambda API documentation
-workflows/ocr.json       # Sample n8n workflow with Mistral OCR (baked into Docker image)
+lib/base-infrastructure-stack.ts  # VPC, S3, EFS, IAM, Secrets
+lib/ecs-stack.ts         # ECS cluster, task definitions, service
+workflows/ocr-s3-state.json  # n8n workflow with S3-based state management
+workflows/ocr4.json      # Legacy workflow (uses old Lambda/DynamoDB approach)
 Dockerfile               # Custom n8n image with workflows and Python
 import-workflows.sh      # Workflow import script (runs on container startup)
 .dockerignore            # Docker build exclusions
@@ -119,9 +120,8 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 
 ### IAM Setup
 
-- **Instance Role**: Lines 95-120 - SSM, CloudWatch, S3, DynamoDB, Bedrock permissions
-- **Lambda Execution Role**: Auto-created by CDK with DynamoDB read/write access
-- **Bot User**: Lines 215-240 - IAM user with S3, DynamoDB, Bedrock, Lambda invoke, and Secrets Manager read permissions
+- **Instance Role**: SSM, CloudWatch, S3, Bedrock permissions
+- **Bot User**: IAM user with S3 full access, Bedrock full access, and Secrets Manager read permissions
 
 ### Secrets Manager
 
@@ -131,15 +131,23 @@ test/n8n-cdk.test.ts     # Jest snapshot tests
 - **Access**: Granted to n8n IAM user for workflow access
 - **Update Command**: `aws secretsmanager update-secret --secret-id n8n/mistral-api-key --secret-string "key"`
 
-### Lambda State Manager
+### S3 State Management
 
-- **Function**: Lines 60-85 in [lib/n8n-cdk-stack.ts](lib/n8n-cdk-stack.ts#L60-L85)
-- **Code**: [lambda/state-manager.py](lambda/state-manager.py)
-- **Purpose**: Centralized DynamoDB state management for document processing workflow
-- **Invocation**: Function URL with AWS IAM authentication
-- **API**: GET (retrieve state) / UPDATE (modify state) operations
-- **State Flow**: NULL → PENDING_OCR → PENDING_CLASSIFICATION → PENDING_TRANSLATION → COMPLETED
-- **Documentation**: [lambda/README.md](lambda/README.md)
+- **Approach**: Each processed file has a corresponding `.meta/<file-path>.json` metadata file in S3
+- **Purpose**: Track document processing state without Lambda/DynamoDB complexity
+- **State Flow**: NEW → PENDING_OCR → PENDING_CLASSIFICATION → PENDING_TRANSLATION → COMPLETED
+- **Metadata Fields**:
+  - `state`: Current processing state
+  - `filePath`: Original file path
+  - `discovered_at`: Timestamp when file was first discovered
+  - `ocr_completed_at`: Timestamp when OCR finished
+  - `classification_completed_at`: Timestamp when classification finished
+  - `translation_completed_at`: Timestamp when translation finished
+  - `completed_at`: Final completion timestamp
+  - `category`/`subcategory`: Classification results
+  - `text_length`: Length of extracted text
+  - `output_path`: Path to final processed file
+- **Benefits**: Simpler architecture, no Lambda cold starts, easier debugging, state persists alongside files
 
 ### Workflow Integration
 
@@ -207,12 +215,25 @@ removalPolicy: cdk.RemovalPolicy.DESTROY, // Instead of RETAIN
 
 ## Workflow Information
 
-### Sample Workflow: [workflows/ocr.json](workflows/ocr.json)
+### Current Workflow: [workflows/ocr-s3-state.json](workflows/ocr-s3-state.json)
 
 - **Trigger**: Every 5 minutes
-- **Flow**: S3 List → DynamoDB State Check → OCR Processing
-- **Purpose**: Document processing pipeline demo
+- **Flow**: 
+  1. S3 List Files (input/ prefix)
+  2. For each file: Check metadata (.meta/<file-path>.json)
+  3. Route based on state:
+     - NEW/PENDING_OCR → Download file → Mistral OCR → Save metadata
+     - PENDING_CLASSIFICATION → Bedrock classification → Save metadata
+     - PENDING_TRANSLATION → Bedrock translation → Upload result → Mark completed
+     - COMPLETED → Skip
+- **State Storage**: S3 metadata JSON files (`.meta/` prefix)
+- **Purpose**: Document processing pipeline with state tracking in S3
 - **Note**: Contains placeholder `YOUR_CREDENTIAL_ID` - needs manual update after deployment
+
+### Legacy Workflow: [workflows/ocr4.json](workflows/ocr4.json)
+
+- **Status**: Deprecated (uses Lambda/DynamoDB approach)
+- **Keep for reference**: Shows the old state management pattern
 
 ## Environment Configuration
 
@@ -269,11 +290,12 @@ npx cdk destroy    # Teardown (volume retained)
 
 Monthly estimate (us-east-1):
 
-- EC2 t3.small: ~$15-20
-- EBS 10GB gp3: ~$0.80
-- S3: ~$1.15 (50GB tier)
-- DynamoDB: Pay-per-request (minimal)
-- **Total**: ~$17-25/month
+- ECS Fargate (512 CPU, 1GB RAM, ~12h/day): ~$10-15
+- EFS (minimal usage): ~$1
+- S3 (50GB storage + requests): ~$1.50
+- **Total**: ~$12-17/month
+
+Note: Significantly reduced from previous architecture by eliminating Lambda and DynamoDB costs.
 
 ## Security Considerations
 
